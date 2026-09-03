@@ -1,0 +1,267 @@
+name: CI
+
+# THREE TIERS, and the tiering is the point.
+#
+#   Gate       every push and PR      1 job     target under 3 min
+#   Merge      push to `main`         + CodeQL  target under 6 min
+#   Assurance  weekly cron, manual dispatch, or a push that touches code
+#
+# The tiering is visibility-agnostic so it works whether this repository is
+# public (free minutes) or private (billed). On a private repo the split is
+# load-bearing rather than merely tidy: the previous shape of this workflow
+# ran 16 parallel jobs on every push, which bills 16 per-job roundings to buy
+# latency no human experiences on a weekly harness.
+#
+# WHAT THE TEMPLATE ENABLES, and why it is a short list. Five gates run here.
+# Everything else under `docs/reviews/` and `scripts/` is carried DISABLED,
+# with the reason in `UNWIRED_BY_DECISION` inside
+# `docs/reviews/check-checkers-are-wired.py`. Turn a gate on when this project
+# has the artefact it checks, and only after measuring it green - a gate that
+# lands red is one people learn to ignore.
+
+on:
+  push:
+    branches: [main]
+    # PATH FILTERS. A README-only change must not run the suite. Keep this
+    # list in step with what the jobs below actually read.
+    paths-ignore:
+      - '**/*.md'
+      - '!README.md'          # the Quickstart gate PARSES this one
+      - 'LICENSE'
+      - 'NOTICE'
+  pull_request:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+# THE SINGLE HIGHEST-VALUE LINE IN THIS FILE. Without cancel-in-progress a
+# busy branch bills every superseded run; one repository elsewhere consumed
+# 83% of a month's bill this way. `main` is exempt: a merge queue must not
+# cancel the run that is establishing the trunk is green.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------
+  # GATE - every push and every PR. Keep this under three minutes.
+  # ---------------------------------------------------------------------
+  gate:
+    runs-on: ubuntu-latest   # NEVER macOS (bills 10x) or Windows (2x)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # fetch-depth: 0 is REQUIRED, not tidiness. check-design-freeze.py
+          # resolves the SHA in DESIGN-FREEZE.txt, and a depth-1 checkout
+          # cannot see it - the checker then reports a BROKEN INSTRUMENT
+          # (exit 3), which is correct and unhelpful.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install from the frozen lock
+        run: uv sync --frozen
+
+      - name: No lock drift
+        run: uv lock --check
+
+      - name: Lint
+        run: uv run --frozen ruff check .
+
+      - name: Format
+        run: uv run --frozen ruff format --check .
+
+      - name: Types
+        run: uv run --frozen mypy
+
+      - name: Default suite, zero skips
+        run: |
+          set -uo pipefail
+          # GitHub runs every `run:` block as `bash -e {0}`, and `set -uo
+          # pipefail` does NOT clear that. Under `-e` the ASSIGNMENT
+          # `out=$(cmd)` is itself the failing command, so the shell dies
+          # there and `rc=$?` never runs - every diagnostic branch below
+          # would be unreachable. This `set +e` is what makes `rc` reachable.
+          set +e
+          out=$(uv run --frozen pytest --cov --cov-report=term-missing 2>&1); rc=$?
+          echo "$out"
+          [ "$rc" -eq 0 ] || exit "$rc"
+          # A SKIP IS A GREEN THAT TESTED NOTHING. Deselect an excluded arm
+          # by marker; never `skipif`. The here-string belongs to the grep,
+          # not after `then` - written the other way the grep reads STDIN,
+          # finds nothing, and the guard never fires.
+          if grep -qE '[0-9]+ skipped' <<< "$out"; then
+            echo "::error::the suite skipped tests. A skip is a green that tested nothing."
+            exit 1
+          fi
+
+      - name: The README's Quickstart still works
+        run: uv run --frozen python docs/reviews/check-quickstart.py
+
+      - name: The design at its declared freeze is the design on the trunk
+        run: uv run --frozen python docs/reviews/check-design-freeze.py
+
+      - name: ADR numbers are unique and contiguous, and the index matches
+        run: |
+          set -uo pipefail
+          # See the note in "Default suite" above: without this, `rc=$?` is
+          # unreachable and the diagnostic below never prints.
+          set +e
+          out=$(uv run --frozen python docs/reviews/check-adr-numbers.py 2>&1); rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::two ADRs share a number, a number is missing, or the index disagrees"
+            exit 1
+          fi
+
+      - name: Obligation anchors still resolve to their subjects
+        run: |
+          set -uo pipefail
+          set +e
+          out=$(uv run --frozen python docs/reviews/check-obligations.py 2>&1); rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::an obligation anchor no longer contains its subject"; exit 1
+          fi
+          # SELECTOR CONTROL. The script treats parsing zero rows as a
+          # failure; assert the population is non-empty here too, rather
+          # than trusting a green whose sample size nothing states.
+          grep -qE 'Mappings: [1-9][0-9]*' <<< "$out" || {
+            echo "::error::the checker parsed no mappings; its green means nothing"; exit 1; }
+
+      - name: Every checker is wired, or says why it is not
+        run: uv run --frozen python docs/reviews/check-checkers-are-wired.py
+
+      - name: The wiring checker's own controls still fire
+        run: uv run --frozen python docs/reviews/check-checkers-are-wired.py --self-test
+
+  # ---------------------------------------------------------------------
+  # MERGE - push to `main` only. Gate has already run on the same commit.
+  # ---------------------------------------------------------------------
+  codeql:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3
+
+  workflow-lint:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Lint the workflows
+        run: |
+          set -euo pipefail
+          ver=1.7.7
+          sha=023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+          url=https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz
+          curl -fsSL "$url" -o /tmp/actionlint.tgz
+          echo "${sha}  /tmp/actionlint.tgz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          SHELLCHECK_OPTS=--severity=warning /tmp/actionlint -no-color
+
+  # ---------------------------------------------------------------------
+  # ASSURANCE - weekly, on demand, or when a push touches code.
+  # ---------------------------------------------------------------------
+  changes:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Classify the pushed paths by role
+        id: classify
+        run: |
+          set -uo pipefail
+          set +e
+          changed=$(git diff --name-only HEAD^ HEAD 2>/dev/null)
+          if [ -z "$changed" ]; then
+            # NO DIFF IS NOT "NO CODE". A first push, a force-push or a
+            # shallow fetch all produce an empty list, and answering
+            # `false` there would silently skip the tier.
+            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if grep -qE '^(src/|tests/|scripts/|docs/reviews/|pyproject.toml|uv.lock)' <<< "$changed"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  harness-assurance:
+    # `!= 'false'` IS NOT A STYLISTIC CHOICE, AND `== 'true'` IS A BUG.
+    # `needs.<job>.outputs.<name>` is the EMPTY STRING when that job was
+    # skipped or FAILED. Written `== 'true'` this condition then evaluates
+    # false and the whole tier is skipped - and a skipped job renders GREY,
+    # not red, so a broken classifier silently deletes the tier and nobody
+    # sees a failure. Written `!= 'false'` the same breakage runs the tier,
+    # which is the direction that fails CLOSED. `always()` is what lets this
+    # job be reached at all when `changes` did not run (schedule/dispatch).
+    if: >-
+      always() && (
+        github.event_name == 'schedule'
+        || github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'push' && needs.changes.outputs.code != 'false')
+      )
+    needs: [changes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install from the frozen lock
+        run: uv sync --frozen
+
+      # ONE SERIAL JOB, deliberately. Nobody waits on a weekly run, so
+      # fanning it out buys latency no human experiences and pays 16 lane
+      # setups and 16 per-job billing roundings for it.
+      #
+      # ADD YOUR MUTATION AND AMPUTATION HARNESSES HERE, each through
+      # `scripts/ci-harness-gate.sh` so its verdict line, row floor and
+      # exit code are read rather than assumed.
+      - name: The tier is reachable, and says so
+        run: |
+          set -euo pipefail
+          # A TIER NOBODY TRIGGERS IS A DELETED TIER. This step exists so
+          # that the schedule/dispatch path is proved to fire on an empty
+          # project, before there is a harness to run in it. DELETE IT once
+          # a real harness step lives here - two of them is one that nobody
+          # reads.
+          echo "Assurance tier reached: event=${{ github.event_name }}"
+
+      - name: The serial lane left no mutation in src or tests
+        run: |
+          set -euo pipefail
+          # A KILLED HARNESS LEAVES ITS MUTATION IN THE TREE. Assert the
+          # tree is clean rather than trusting each harness's own cleanup,
+          # which does not run when the process is SIGKILLed.
+          if [ -n "$(git status --porcelain -- src tests)" ]; then
+            git status --porcelain -- src tests
+            echo "::error::a harness left a mutation behind in src/ or tests/"
+            exit 1
+          fi

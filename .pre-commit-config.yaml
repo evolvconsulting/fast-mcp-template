@@ -1,0 +1,63 @@
+# Commit-time gates.
+#
+# WHY AT COMMIT TIME AND NOT ONLY IN CI: on a public remote a pushed secret is
+# compromised the instant it lands. CI finds it after the fact; a hook finds it
+# before. The two are not substitutes.
+#
+# STATED CEILING, so this is not over-trusted: the file-type gate stops a FILE
+# of the wrong type. It does nothing about confidential prose pasted into
+# Markdown - which is the incident that actually happens. Review covers that,
+# not this file.
+#
+# Install:  pre-commit install
+# Run over everything:  pre-commit run --all-files
+
+# fail_fast is deliberately OFF. An author fixing one refusal should see every
+# gate's findings in one run, not discover the second after fixing the first.
+fail_fast: false
+
+repos:
+  - repo: local
+    hooks:
+      - id: committed-file-types
+        name: committed-file-type gate (allowlist-first, magic-number, NUL, fail-closed)
+        entry: python3 scripts/check-committed-file-types.py
+        language: system
+        # pass_filenames MUST stay false. The gate reads the INDEX itself
+        # (git diff --cached), because that is the only way an allowlist
+        # exception can be required to be staged in the same commit. It also
+        # rejects unknown argv, so a filename list would make it exit 2.
+        pass_filenames: false
+        # always_run MUST stay true. Without it pre-commit skips the hook when
+        # no file matches its (empty) filter, and a gate that skips is a gate
+        # that fails open.
+        always_run: true
+
+  # ShellCheck at --severity=warning. WIRED HERE AND GREEN on the template's
+  # own scripts; keep it green as you add your own. A gate red on a clean tree
+  # trains everyone to ignore it.
+  #
+  # ADOPTION CEILING, stated rather than discovered: this hook is
+  # `language: docker_image`. It pulls koalaman/shellcheck:v0.10.0 and needs a
+  # working Docker daemon at every commit. If that bites, the alternative is a
+  # `language: system` hook wrapping a pinned binary - and that is an ADR, not
+  # an edit.
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        args: ['--severity=warning']
+
+# NOT WIRED HERE, and this is the reason rather than an omission:
+#
+#   detect-secrets, via scripts/check-secrets-baseline.py. It compares the SET
+#   of (filename, type, hashed_secret) against `.secrets.baseline`, so a NEW
+#   finding is red and a line number moving is not - which matters, because
+#   detect-secrets' own hook REWRITES the baseline it then fails on, and CI can
+#   stage nothing. Add the hook once you have generated a baseline for THIS
+#   tree:
+#
+#       uvx detect-secrets==1.5.0 scan --baseline .secrets.baseline
+#
+#   Audit every entry before staging it. A baseline carried from another
+#   project describes a different tree and would pass over yours.

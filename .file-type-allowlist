@@ -1,0 +1,15 @@
+# Paths exempt from the committed-file-type gate. Rule 0 in
+# scripts/check-committed-file-types.py. Read FROM THE INDEX, so an exception is
+# only in force once it is staged - a working-tree-only entry does not count.
+#
+# Every line needs a reason. An allowlist entry without one is indistinguishable
+# from a defect somebody silenced, and this file exempts a path from ALL FIVE
+# rules, not just the one that fired.
+
+# PEP 561 marker. Required to be named exactly `py.typed` and to be EMPTY, so it
+# has no extension the gate can classify and no content to sniff. Without it the
+# installed package reads as untyped to every consumer - mypy says "module is
+# installed, but missing library stubs or py.typed marker" - while `ANN` in the
+# ruff select list means every function here IS annotated. The marker is the only
+# thing that lets anyone outside this repository use those annotations.
+src/fast_mcp_template/py.typed

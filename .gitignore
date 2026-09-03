@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+# Coverage artifacts. `.coverage` is a SQLite database, and it appears untracked
+# and UNIGNORED after the first test run that produces one - exactly the shape a
+# broad `git add` sweeps in. The committed-file-type gate refuses it too, but
+# that gate is the backstop and this is the primary layer.
+.coverage
+.coverage.*
+coverage.xml
+# `coverage.json` is what `docs/reviews/check-coverage-floors.py` reads, so it
+# appears the moment that gate is turned on. Listed here BEFORE it exists: an
+# artefact list beside a tool is blind to the format nobody added.
+coverage.json
+htmlcov/
+.mypy_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.key
+
+# Local data
+*.db
+*.sqlite3
+
+# Vendored third-party source documents. Research CITES and links sources; it
+# does not redistribute them. A confidential vendor PDF and an unlicensed RAML
+# reached two public remotes on the project this template came from.
+#
+# SCOPED TO THE WHOLE REPOSITORY, not to docs/research/. The mechanism is a
+# broad `git add` sweeping files nobody intended to stage, and THE REPOSITORY
+# ROOT - where such a sweep picks a file up - is exactly where a path-scoped
+# block does not apply.
+#
+# WHAT THIS COSTS, stated rather than assumed: a legitimate PDF someone later
+# wants in the repository is blocked too. The answer then is `git add -f` PLUS
+# an entry in `.file-type-allowlist`, because check-committed-file-types.py
+# denylists these extensions independently and will still refuse it.
+#
+# THIS IS NOT THE CONTROL. `.gitignore` is bypassed by `git add -f` and does
+# nothing about a file that is already tracked. It removes the accident, not
+# the intent. The gate is the control.
+*.pdf
+*.raml
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.zip
+
+# Credential material the standard names explicitly
+*.pem
+secrets/

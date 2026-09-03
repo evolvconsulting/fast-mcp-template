@@ -1,0 +1,152 @@
+[project]
+name = "fast-mcp-template"
+version = "0.1.0"
+description = "Template for an MCP server. Rename everything here first."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "evolv Consulting" }]
+
+# fastmcp 4.x is a prerelease line, so `fastmcp-slim` must be named
+# explicitly or the resolve fails outright. Keep both lines together.
+dependencies = [
+  "fastmcp==4.0.0b4",
+  "fastmcp-slim==4.0.0b4",   # transitive prerelease; must be named or resolution fails
+  "pydantic-settings==2.15.0",
+]
+
+[project.scripts]
+fast-mcp-template = "fast_mcp_template.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fast_mcp_template"]
+
+[tool.uv]
+prerelease = "explicit"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  # `docs/reviews/check-checkers-are-wired.py` PARSES the workflow YAML
+  # rather than grepping it, because a grep counts a name in a COMMENT
+  # as wired. Declared DIRECTLY: it is resolvable transitively today,
+  # and relying on someone else's dependency is relying on a fact
+  # nobody promised. types-PyYAML is what mypy needs for the import.
+  "pyyaml>=6",
+  "types-PyYAML>=6",
+  "pre-commit>=3.7",
+]
+
+# ---------------------------------------------------------------------------
+# Advisory-ignore table, read by `scripts/check_advisories.py` (carried,
+# DISABLED). Landed EMPTY. An entry is legal only for an advisory this
+# code cannot reach, and only with an id, a date, a written
+# unreachability reason, and an expiry no more than 30 days out.
+# ---------------------------------------------------------------------------
+[tool.fast-mcp-template.advisory-ignores]
+entries = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+# --strict-markers is not housekeeping. If your test strategy excludes
+# an arm by marker, a typo in the marker name selects nothing and the
+# run goes green having tested less than it claimed.
+addopts = ["-v", "--strict-markers", "--tb=short", "-ra"]
+
+markers = [
+  "credentialed: needs a real upstream credential. NEVER run in CI",
+  "network: needs outbound network. Deselected from the default offline suite",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage. `fail_under` is the ONE place the overall floor lives; do not
+# also pass `--cov-fail-under` on a command line. Two places to change a
+# threshold is one place to forget.
+#
+# 80 IS A STARTING FLOOR, NOT A MEASUREMENT. Raise it as the project
+# grows; lowering it is a visible diff that has to be defended.
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src/fast_mcp_template"]
+branch = true
+omit = ["*/tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+]
+fail_under = 80
+show_missing = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+# MARKDOWN IS PROSE HERE, NOT SOURCE. Without this exclusion `ruff
+# format` rewrites the Python blocks inside documents, which are quoted
+# illustrations and not code that runs.
+src = ["src", "tests"]
+extend-exclude = ["**/*.md"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "W505",     # doc-line-too-long. Listed even though "W" covers it: W505
+              # is INERT unless max-doc-length is set, so the pair stays
+              # visible together.
+  "F",        # pyflakes
+  "I",        # isort
+  "N",        # pep8-naming
+  "D",        # pydocstyle
+  "UP",       # pyupgrade
+  "B",        # bugbear
+  "S",        # bandit
+  "ASYNC",    # async correctness
+  "DTZ",      # naive datetimes
+  "T20",      # no print statements in src
+  "ANN",      # annotations required
+]
+ignore = ["D203", "D213"]   # mutually exclusive with D211/D212
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "S101", "S603", "S607",  # asserts and subprocess are the point in a test
+  "D103", "ANN",           # undocumented, unannotated tests are fine
+  "N802",                  # test names may use CAPS for emphasis
+]
+# A checker script is a CLI: printing IS its interface, and its refusal
+# message is the control being tested. T20 would forbid the thing the
+# controls assert on.
+"{scripts,docs/reviews}/**" = ["T201", "D103"]
+"docs/reviews/**" = [
+  "S101", "S603", "S607",  # asserts and subprocess are the point in a harness
+  "ANN",                   # an unannotated probe helper is fine, as in tests/*
+]
+"scripts/**" = ["S101", "S603", "S607", "ANN"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# `docs/reviews` and `scripts` are IN the type gate on purpose. They are
+# the wired checkers; leaving them out is how half of them went
+# unchecked here for weeks.
+files = ["src", "tests", "docs/reviews", "scripts"]
