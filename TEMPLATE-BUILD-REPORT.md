@@ -1,11 +1,22 @@
 # Template build report
 
 **Extracted from:** `fast-mcp-jobvite` at **`6827e9d`** (main) · **Built:** 2026-09-02
+**Revised:** 2026-09-03, after the template was applied to a real repository and
+**green was not reached**. See §8.
 
 This file records what was carried, what was dropped, every hardcoded floor and
-anchor that was neutralised, and the measured proof that the Gate tier is green
-on an empty project. **Delete it once your project is real** — it is a record of
-how the template was made, not a document about your project.
+anchor that was neutralised, the measured proof that the Gate tier is green on
+an empty project, and — since the revision — the eight defects that only
+appeared when the template met code it had not written. **Delete it once your
+project is real** — it is a record of how the template was made, not a document
+about your project.
+
+> **THE SINGLE MOST IMPORTANT THING IN THIS FILE.** Everything above §8 was
+> written while the template's only subject was itself, and it was all true and
+> all green. Applying it to one real repository produced **eight defects in one
+> afternoon**, four of which no amount of self-testing could have surfaced,
+> because a template that grades its own homework passes. §8 is the part that
+> was measured against something else.
 
 ---
 
@@ -71,7 +82,13 @@ alone fails the build.
 repopulated with 39 of the template's own**, each stating *when to turn that gate
 on*. Not one reason was inherited.
 
-### 2.2 The five ENABLED gates
+### 2.2 The ENABLED gates
+
+**This section said FIVE and now says six, and the swap is the honest part.**
+`check-quickstart.py` was one of the original five and is now shipped DISABLED;
+three gates were added after §8. Derive the current list rather than trusting
+this table — `uv run --frozen python docs/reviews/check-checkers-are-wired.py`
+prints WIRED and EXEMPT with reasons, and it is the thing CI reads.
 
 | Gate | What it asserts |
 |---|---|
@@ -79,18 +96,33 @@ on*. Not one reason was inherited.
 | `check-design-freeze.py` | `docs/DESIGN.md` at the SHA in `DESIGN-FREEZE.txt` is the same **blob** as on the trunk |
 | `check-adr-numbers.py` | ADR numbers unique and contiguous, and `adr/README.md` lists every one — **checked in both directions** |
 | `check-obligations.py` | every row in `OBLIGATIONS.md` resolves to a line containing its subject; zero rows is a FAILURE |
-| `check-quickstart.py` | the commands in `README.md`'s Quickstart are parsed out of it and RUN |
+| `check-default-branch-is-triggered.py` | **added by §8.** This repository's default branch is in the workflow's push trigger, and no `if:` names a trunk literally |
+| `check-coverage-ratchet.py` | **added by §8.** Coverage has not fallen below `docs/coverage-baseline.txt` |
+| `check-mypy-ratchet.py` | **added by §8.** No mypy error absent from `docs/mypy-baseline.txt` |
+
+`check-quickstart.py` is **carried DISABLED** with its reason in
+`UNWIRED_BY_DECISION`. It hardcodes `fastmcp inspect`, which takes a *file* and
+cannot load a package using relative imports — the Python norm. It passed here
+only because the placeholder server happens to use an absolute one, which made
+it a gate built to pass its own check (§8, defect 3).
+
+**Each of the three new gates ships a controls script that plants the failure
+and requires the checker to refuse it**, and those controls run in Gate. Every
+one of them caught something while being written — see §8's "what the controls
+caught" column, which is the argument for writing the failing arm first.
 
 Plus the ordinary tooling: `uv lock --check`, `ruff check`, `ruff format
---check`, `mypy --strict` (over `src`, `tests`, `docs/reviews`, `scripts`),
-`pytest --cov` with a zero-skips guard, and actionlint on the Merge tier.
+--check` (excluding the carried machinery — §8, defect 2), `mypy --strict` (over
+`src`, `tests`, `docs/reviews`, `scripts`), `pytest --cov` with a zero-skips
+guard, and actionlint on the Merge tier.
 
-**Why five and not thirty-seven.** 68 checkers exist in the source; 31 are
-unit-specific and encode that project's tool surface, so none of them transfers.
-Of the 37 generic ones, enabling all of them here would hand every child
-repository three dozen gates it has not earned. That is precisely how the source
-repository reached its documentation ratio. The five above are the ones that hold
-on a project with no code in it yet.
+**Why a small core and not thirty-seven.** 68 checkers exist in the source; 31
+are unit-specific and encode that project's tool surface, so none of them
+transfers. Of the 37 generic ones, enabling all of them here would hand every
+child repository three dozen gates it has not earned. That is precisely how the
+source repository reached its documentation ratio. The enabled ones are those
+that hold on a project with no code in it yet — **and §8 is the evidence that
+"holds on an empty project" and "holds on a real one" are different claims.**
 
 ### 2.3 The 39 carried-but-DISABLED members
 
@@ -270,16 +302,22 @@ Results are in §5.4 of the run recorded below; every step exits 0.
 | `uv sync --frozen` | ok, 93 packages |
 | `uv lock --check` | ok |
 | `uv run --frozen ruff check .` | All checks passed |
-| `uv run --frozen ruff format --check .` | 37 files already formatted |
-| `uv run --frozen mypy` | Success: no issues found in 37 source files |
-| `uv run --frozen pytest --cov` | 5 passed, **0 skipped**, coverage 88.46% against `fail_under = 80` |
-| `check-quickstart.py` | 3 commands parsed, 2 skipped with stated reasons, 1 RUN and asserted |
+| `uv run --frozen ruff format --check .` | 6 files already formatted (was 37; the carried machinery is format-excluded — §8, defect 2) |
+| `uv run --frozen mypy` | Success: no issues found in 40 source files |
+| `uv run --frozen pytest --cov` | 5 passed, **0 skipped**, coverage 88.46% — now against the RATCHET in `docs/coverage-baseline.txt`, not `fail_under` (§8, defect 4) |
+| `check-quickstart.py` | **no longer a Gate step.** Shipped disabled — §8, defect 3 |
 | `check-design-freeze.py` | frozen blob == trunk blob |
 | `check-adr-numbers.py` | 1 ADR, `0000-0000`, index agrees both ways |
 | `check-obligations.py` | 5 mappings, 4 anchors verified, 1 ABSENT |
-| `check-checkers-are-wired.py` | 44 members, 5 WIRED, 39 excused, **0 unexplained** |
-| `check-checkers-are-wired.py --self-test` | **53/53 controls passed** |
+| `check-checkers-are-wired.py` | 52 members, 11 WIRED, 41 excused, **0 unexplained** (was 44/5/39 before §8) |
+| `check-checkers-are-wired.py --self-test` | **53/53 controls passed, unchanged by §8** |
+| `check-default-branch-controls.sh` | 7/7 arms |
+| `check-design-freeze-controls.sh` | 6/6 arms |
+| `check-ratchet-controls.sh` | 13/13 arms |
+| `check-scripts-lib-survives-gitignore.sh` | 5/5 arms on scratch repos |
 | actionlint 1.7.7, `SHELLCHECK_OPTS=--severity=warning` | exit 0, no findings |
+
+**Re-measured on a fresh clone of the post-§8 branch: 17 of 17 steps exit 0.**
 
 **Two things went red before they went green, and both were real:**
 
@@ -352,6 +390,116 @@ over nothing. Your first real decision is `0001`.
   the figures in them are labelled as past measurements — but a reader should
   treat every number inside a carried checker's prose as historical, not as a
   claim about this project.
+  **REFUTED, and it was the loudest risk on this list.** Applied to a real
+  repository, the 39 disabled checkers' Jobvite-derived docstrings caused *zero*
+  confusion — read in situ they parse as arguments, not as claims. Recorded
+  because a risk that was predicted and did not materialise is worth as much as
+  one that did.
 - **`fetch-depth: 0`** is required on any job running `check-design-freeze.py`.
   A depth-1 checkout makes it exit 3 with a message that says so, but the message
   is easy to misread as evidence the design moved.
+  **PARTLY CLOSED.** The exit-3 case is now discriminated from the far commoner
+  one — a child repository carrying the template's own freeze SHA — which exits
+  **2** with "not frozen yet, run `scripts/refreeze.sh`". `fetch-depth: 0`
+  remains required and the shallow message is unchanged (§8, defect 5).
+
+**THE OTHER PHASE 4 RISK ALSO REFUTED:** not one of the neutralised floors or
+anchors in §4 fired a false red on a foreign repository. `_project_name()` read
+the host's name out of its `pyproject.toml` correctly; the `PACKAGE`/`CONFIG`/
+`TABLE_PATH` renames were mechanical. **Both of the two loudest predictions in
+this document were wrong, in the safe direction.** The eight things that did go
+wrong are in §8, and none of them appears anywhere above.
+
+---
+
+## 8. What one real repository found, and the eight fixes
+
+**Subject:** `jeremy-newhouse/fast-mcp-jira` at `522f91b`, cloned read-only.
+**Full measurement:** `REPORT-accelerator-validation.md`.
+**Re-runnable:** `phase5-jira-proof/reapply.sh` re-applies the FIXED template to
+a fresh clone and prints the Gate tier with real exit codes.
+
+**Before: 5 of 11 Gate steps green. After: 11 of 12.**
+
+The step SET is not identical, so this is not a step-for-step comparison and
+should not be read as one: `check-quickstart` was removed, and three gates were
+added. What is comparable is that **every red that was a defect in the template
+is now green, and the one that remains is not a template defect.**
+
+### 8.1 The eight, and what closed each
+
+| # | Defect | Fix | What the controls caught |
+|---|---|---|---|
+| 1 | `ci.yml` hardcoded `main` at **four functional sites**; the subject's trunk is `dev`, so Gate, CodeQL and actionlint were **silently off** — grey, not red | Three sites derive from `github.event.repository.default_branch`. The fourth, `on: push: branches:`, is static YAML and cannot; it ships `[main, master, dev]` **and** a gate fails loudly on a trunk it does not list | A2 is the decisive arm: the **pre-fix** workflow against `default=dev`. Without it the suite proves only that the new code likes itself |
+| 2 | `ruff format --check .` **unsatisfiable at any width** | The carried machinery is excluded from FORMAT only. Lint still covers it — `E501` can only be *satisfied* by widening, never introduced by it, so the two are not symmetric | Re-measured at a **third** width (120 → 27 machinery files), closing the original report's open question. The two arms stay two arms, and it gets worse |
+| 3 | `check-quickstart.py` cannot load a normally-structured package | Shipped DISABLED with its turn-on condition. Separately, `MUST_NOT_PRINT` is now tested **before** `MUST_PRINT`, so an exit-0-with-`ERROR` reports the error rather than a missing needle | — |
+| 4 | `fail_under = 80` is a **floor**; the subject measures 7.45% | `fail_under` deleted; a ratchet against `docs/coverage-baseline.txt`, measured on adoption | An arm at the subject's own 7.45% proves the gate **still bites** there. "Usable on any repo" must not mean "inert on a bad one" |
+| 5 | `DESIGN-FREEZE.txt` made every child open with "BROKEN INSTRUMENT, exit 3" | Exit 2 = *not frozen yet*, discriminated by `--is-shallow-repository`. Plus `scripts/refreeze.sh` | **A1 refused my first fix.** It grepped stderr for `invalid object name`; git says something else entirely here, so the fix fell through to exit 3 and rebuilt the defect one column over. It asks `git cat-file -e` now |
+| 6 | `.gitignore` had never met `lib/` | `!scripts/lib/` appended, **at the end** | **A3 refused my first placement.** Git takes the *last* matching pattern, so the negation written above `lib/` — the obvious place — does nothing. A1 reproduces the defect at 0 of 3 tracked; A2 fixes it at 3 |
+| 7 | The `[tool.*]` blocks are a **replacement** presented as a rename | A "keep these" list beside the "rename these" list | **Found by re-running: it is THREE channels, not one.** See §8.2 |
+| 8 | `OBLIGATIONS.md` makes the template's style values load-bearing silently | All five rows marked PLACEHOLDER, with a table pairing each guarded value to its row | Writing it **broke B3**: a new comment repeated `strict = true` and made the anchor ambiguous. The register refused it, so the comment was rewritten rather than the anchor |
+
+### 8.2 Defect 7 was bigger than the original report found
+
+The report named `asyncio_mode` and `pytest-asyncio`. Re-running the adoption
+showed **three independent channels**, and fixing only the first still left the
+suite dead:
+
+1. **`asyncio_mode`** — a dropped pytest key. A *warning*.
+2. **`markers = [...]`** — replacing the host's list while `addopts` carries
+   `--strict-markers` turns an unlisted marker into a **collection ERROR**, not
+   a warning. The subject died at `'asyncio' not found in markers configuration
+   option`, which survives fixing (1).
+3. **`[dependency-groups]` vs `[project.optional-dependencies]`** — the template
+   declares dev tools where `uv sync` installs them; a host declaring them the
+   other way has them silently absent. That is how `pytest-asyncio` went missing
+   while the host's own `pyproject.toml` still named it.
+
+**With all three kept, the subject's suite runs 26 passed — exactly its
+pre-template baseline.** The cheapest check that a merge landed is to compare
+the PASSED count before and after; a collection error is not a smaller number,
+it is no number at all.
+
+### 8.3 Three numbers reproduced independently
+
+The re-application re-derives the original report's three headline figures from
+scratch, on a fresh clone, through different code:
+
+| Figure | Original report | Re-derived |
+|---|---|---|
+| Subject coverage | 7.45% | **7.45%** (2,829 statements) |
+| mypy `--strict` errors | 158 in 20 files | **158**, across 34 (file, code) pairs |
+| Suite | 26 passed, 0 skipped | **26 passed** |
+
+### 8.4 The one remaining red, and it is not ours to close
+
+`ruff check .` exits 1 with **197 findings**, all but one in `src/`. Derived
+with `ruff check . --output-format concise | grep -oE '\b[A-Z]+[0-9]+\b' |
+sort | uniq -c | sort -rn`:
+
+- **131 W505** — `max-doc-length = 72`, a template doc-width policy the host
+  never opted into. It is anchored by `OBLIGATIONS.md` row B2, which now says in
+  as many words that it is a placeholder to replace. **A per-project decision the
+  template documents and does not make.**
+- **48** annotation and docstring findings (ANN401 21, ANN204 14, D107 8, D301 4,
+  D104 1) — style policy, a day's work or a ratchet.
+- **18 substantive findings in the host's own code** (B904 ×9 losing exception
+  causes, S110 ×2 silent `except: pass`, DTZ005, B905, and five deprecated
+  imports) that its own `select = ["E","F","I","W"]` could never surface.
+
+**Those 18 are the template earning its money**, and they are the reason this
+red should stay red. 131 + 48 + 18 = 197.
+
+### 8.5 What is still not settled
+
+- **None of this has run on GitHub Actions.** Every number here is local. The
+  Gate tier's wall-time target is untested against a real repository, and the
+  branch-derivation expressions in `ci.yml` are validated by actionlint and by
+  reading, not by a live run.
+- **How many of the other eight repos default to `dev`** is unknown. Defect 1's
+  blast radius is therefore unquantified — but it is now loud rather than silent
+  on every one of them, which was the point.
+- **Whether `ruff format`'s two arms stay two arms below 88.** Three points were
+  measured (88, 100, 120) and the mechanism predicts monotonicity upward only.
+- **The subject is on `fastmcp` 3.x and the template pins `4.0.0b4`.** Untouched,
+  because closing it means editing someone else's dependency graph.

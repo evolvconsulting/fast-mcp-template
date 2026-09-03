@@ -63,10 +63,36 @@ entries = []
 # ships no async tests, so nothing warns you - and all 26 of its tests
 # errored AT COLLECTION. Two lines, silent if you miss them.
 #
-# BEFORE YOU PASTE THIS OVER YOUR OWN, keep every key your project already
-# relies on from `[tool.pytest.ini_options]`, `[tool.coverage.*]` and
-# `[tool.ruff*]` - and the dev dependencies behind them
-# (`pytest-asyncio` in that example).
+# AND THE MARKER LIST IS THE SHARPER HALF, found by re-running the
+# adoption after the above was written. `addopts` below carries
+# `--strict-markers`, so a marker this list does not name is not a warning -
+# it is a COLLECTION ERROR. Replacing the host's `markers = [...]` with this
+# one therefore breaks every test decorated with a marker the host declared
+# and this file does not. Measured: the subject's suite died at collection
+# with `'asyncio' not found in markers configuration option`, which is a
+# different failure from the missing `asyncio_mode` and survives fixing it.
+#
+# THE THIRD CHANNEL IS THE DEPENDENCY GROUP, and it is invisible in the
+# diff. This template declares dev tools in `[dependency-groups] dev`, which
+# `uv sync` installs. A host declaring them in
+# `[project.optional-dependencies] dev` is NOT installing them that way, so
+# merging the two files can leave a plugin the tests import silently absent.
+# That is how `pytest-asyncio` went missing on the subject even though the
+# host's own pyproject still named it.
+#
+# BEFORE YOU PASTE THIS OVER YOUR OWN, keep:
+#
+#   - every key your project relies on in `[tool.pytest.ini_options]`
+#     (`asyncio_mode`, and anything else it sets),
+#   - every entry of your `markers = [...]`, MERGED with the two below
+#     rather than replaced, because of `--strict-markers`,
+#   - every `[tool.coverage.*]` and `[tool.ruff*]` key you rely on,
+#   - and every dev dependency behind all of it, moved into
+#     `[dependency-groups] dev` if that is not where your project keeps it.
+#
+# THE CHEAPEST CHECK THAT ALL THREE LANDED: `uv run --frozen pytest` and
+# compare the PASSED count with what your suite gave before the merge. A
+# collection error is not a smaller number, it is no number at all.
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
