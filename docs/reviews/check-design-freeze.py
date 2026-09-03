@@ -31,6 +31,25 @@ which is exactly what happened here.
 an unauthorised one. Both look like a moved blob. It only forces the
 question to be answered - by advancing the freeze deliberately - rather
 than left unasked.
+
+**THREE OUTCOMES, THREE EXIT CODES, and the split is a fix rather than
+a nicety.**
+
+    0   the frozen blob and the trunk blob are the same object
+    1   THE DESIGN MOVED. A finding about the repository.
+    2   NOT FROZEN YET. A task: run `scripts/refreeze.sh`.
+    3   BROKEN INSTRUMENT. Do not believe this output.
+
+Exit 2 exists because of a measured misdiagnosis. A child repository
+that copies the template's `DESIGN-FREEZE.txt` inherits a SHA from
+ANOTHER repository, and `git rev-parse` fails on it - so every child
+used to open with *"This is a BROKEN INSTRUMENT."* The instrument was
+fine. `--is-shallow-repository` is the discriminator: an absent
+object in a SHALLOW clone is a genuine instrument failure
+(`fetch-depth: 1`); in a COMPLETE clone the pointer is someone else's.
+Presence itself is asked with `git cat-file -e`, never inferred from an
+error message - the first attempt at this fix grepped stderr, met a
+third wording, and fell straight back through to exit 3.
 """
 
 from __future__ import annotations
@@ -44,19 +63,91 @@ FREEZE_FILE = ROOT / "docs" / "DESIGN-FREEZE.txt"
 DESIGN = "docs/DESIGN.md"
 
 
-def git(*args: str) -> str:
-    """Run git in the repo; return stdout, or raise with its stderr."""
-    done = subprocess.run(
-        ["git", "-C", str(ROOT), *args], capture_output=True, text=True
+#: The sentinel a fresh child repository ships with. It is NOT a SHA, on
+#: purpose - see `_refuse_unfrozen`.
+UNFROZEN = "UNFROZEN"
+
+
+def _run(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run git in the repo. The caller decides what a failure means."""
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *args], capture_output=True, text=True, check=False
     )
+
+
+def _is_shallow() -> bool:
+    """Is this a shallow clone? The discriminator, not a guess."""
+    done = _run("rev-parse", "--is-shallow-repository")
+    return done.returncode == 0 and done.stdout.strip() == "true"
+
+
+def _refuse_unfrozen(why: str) -> None:
+    """The design is not frozen YET. Say what to do, and exit 2.
+
+    **THIS IS THE DIFFERENCE BETWEEN A TASK AND A BROKEN MACHINE, and
+    getting it wrong cost every child repository its first impression.**
+    A template ships `DESIGN-FREEZE.txt`; copied into a child, its SHA
+    names a commit in ANOTHER repository, `git rev-parse` fails, and the
+    checker printed *"This is a BROKEN INSTRUMENT. Exit 3."* Measured on
+    a real adoption, 2026-09-03: every child starts by reporting that
+    its instrument is broken, when in fact the instrument is fine and
+    the project simply has not frozen its design yet.
+
+    Exit 2 is this file's *you have work to do* code. Exit 3 is *do not
+    believe my output*. They are different facts and must not print the
+    same.
+    """
+    print(why)
+    print()
+    print("THE DESIGN IS NOT FROZEN IN THIS REPOSITORY YET.")
+    print("This is a TASK, not a broken instrument.")
+    print()
+    print("  1. Write docs/DESIGN.md and commit it.")
+    print("  2. bash scripts/refreeze.sh")
+    print("  3. Commit docs/DESIGN-FREEZE.txt.")
+    print()
+    print("It is two commits because no commit can contain its own SHA.")
+    print("Exit 2.")
+    raise SystemExit(2)
+
+
+def _require_commit(sha: str) -> None:
+    """The frozen commit must be an object here. Else 2 or 3, never 0.
+
+    **THE QUESTION IS ASKED DIRECTLY, NOT INFERRED FROM STDERR.** The
+    first version of this fix grepped `git rev-parse` for
+    `invalid object name`. Its own control refused it: resolving
+    `<sha>:docs/DESIGN.md` against an absent commit says
+    *"path 'docs/DESIGN.md' exists on disk, but not in '<sha>'"* - a
+    third message, matching neither pattern, so the fix fell through to
+    exit 3 and rebuilt the very defect it was written to close. An error
+    string is a thing a tool's author picks. `cat-file -e` is a
+    question with an exit code.
+    """
+    if _run("cat-file", "-e", f"{sha}^{{commit}}").returncode == 0:
+        return
+
+    if _is_shallow():
+        print(f"The frozen commit {sha} IS NOT IN THIS CLONE, and this clone")
+        print("is SHALLOW. `actions/checkout` defaults to depth 1 and cannot")
+        print("see the commit DESIGN-FREEZE.txt names. Set `fetch-depth: 0`")
+        print("on the job. It is NOT evidence the design moved.")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        raise SystemExit(3)
+
+    _refuse_unfrozen(
+        f"The frozen commit {sha} is not an object in this repository,\n"
+        "and this clone is NOT shallow, so it never will be. It names a\n"
+        "commit somewhere else - almost always the template's own, copied\n"
+        "in with the rest of the machinery."
+    )
+
+
+def git(*args: str) -> str:
+    """Run git in the repo; return stdout, or refuse with its stderr."""
+    done = _run(*args)
     if done.returncode != 0:
-        detail = done.stderr.strip()
-        print(f"git {' '.join(args)} failed: {detail}")
-        if "invalid object name" in detail or "bad object" in detail:
-            print("THE FROZEN SHA IS NOT IN THIS CLONE. That is almost always a")
-            print("SHALLOW checkout - `actions/checkout` defaults to depth 1 and")
-            print("cannot see the commit DESIGN-FREEZE.txt names. Set")
-            print("`fetch-depth: 0` on the job. It is NOT evidence the design moved.")
+        print(f"git {' '.join(args)} failed: {done.stderr.strip()}")
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
         raise SystemExit(3)
     return done.stdout.strip()
@@ -72,9 +163,15 @@ def main() -> int:
     frozen = FREEZE_FILE.read_text(encoding="utf-8").strip()
     if not frozen:
         print("DESIGN-FREEZE.txt is EMPTY. A blank declaration would")
-        print("compare nothing and pass. Exit 2.")
-        return 2
+        print("compare nothing and pass.")
+        _refuse_unfrozen("")
 
+    if frozen.split()[0].upper() == UNFROZEN:
+        _refuse_unfrozen(
+            "DESIGN-FREEZE.txt carries the UNFROZEN sentinel rather than a SHA."
+        )
+
+    _require_commit(frozen)
     frozen_blob = git("rev-parse", f"{frozen}:{DESIGN}")
     head_blob = git("rev-parse", f"HEAD:{DESIGN}")
 

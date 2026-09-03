@@ -62,3 +62,32 @@ htmlcov/
 # Credential material the standard names explicitly
 *.pem
 secrets/
+
+# ---------------------------------------------------------------------------
+# RE-INCLUSION, AND IT MUST BE THE LAST WORD ON `scripts/lib/`.
+#
+# `scripts/lib/` HOLDS THREE HARNESS LIBRARIES AND A STOCK PYTHON .gitignore
+# DELETES THEM. GitHub's standard Python template contains `lib/` in its
+# packaging block, and git applies a bare `lib/` AT ANY DEPTH - so
+# `scripts/lib/` is excluded, `git add -A` reports nothing, `git status`
+# reports nothing, and `git ls-files scripts/lib/` returns 0 while `ls`
+# shows three files on disk. Measured on a real adoption, 2026-09-03. The
+# only thing that noticed was `check-checkers-are-wired.py`, refusing with
+# "3 exemption(s) name a file that does not exist".
+#
+# THIS TEMPLATE'S OWN TREE NEVER HAD THE BUG, which is exactly why it
+# shipped: this file carries no `lib/` line, so the template had never met a
+# normal Python repository. The negation is here for the CHILD.
+#
+# POSITION IS LOAD-BEARING AND THE OBVIOUS PLACE IS WRONG. Git takes the
+# LAST matching pattern, so a negation written ABOVE a `lib/` line does
+# NOTHING - which is how the first version of this fix was written, and its
+# proof script caught it. If you merge this file into a host project's
+# .gitignore, these two lines go at the END, after that file's `lib/`.
+#
+# BOTH FORMS, because they answer different questions: `!scripts/lib/`
+# re-includes the DIRECTORY - without which git never descends into it and
+# nothing inside can be reached - and `!scripts/lib/**` re-includes what is
+# nested below.
+!scripts/lib/
+!scripts/lib/**

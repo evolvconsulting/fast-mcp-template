@@ -53,6 +53,21 @@ dev = [
 [tool.fast-mcp-template.advisory-ignores]
 entries = []
 
+# ---------------------------------------------------------------------------
+# ADOPTING AN EXISTING PROJECT: THIS BLOCK IS A REPLACEMENT, NOT A RENAME.
+#
+# The README's setup list tells you what to RENAME. It used to say nothing
+# about what to KEEP, and that silence has a measured cost: the subject of
+# the 2026-09-03 adoption is an async suite depending on
+# `asyncio_mode = "auto"`. This block does not carry that key, the template
+# ships no async tests, so nothing warns you - and all 26 of its tests
+# errored AT COLLECTION. Two lines, silent if you miss them.
+#
+# BEFORE YOU PASTE THIS OVER YOUR OWN, keep every key your project already
+# relies on from `[tool.pytest.ini_options]`, `[tool.coverage.*]` and
+# `[tool.ruff*]` - and the dev dependencies behind them
+# (`pytest-asyncio` in that example).
+# ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -69,12 +84,19 @@ markers = [
 ]
 
 # ---------------------------------------------------------------------------
-# Coverage. `fail_under` is the ONE place the overall floor lives; do not
-# also pass `--cov-fail-under` on a command line. Two places to change a
-# threshold is one place to forget.
+# Coverage. THERE IS NO `fail_under` HERE, AND ITS ABSENCE IS THE FIX.
 #
-# 80 IS A STARTING FLOOR, NOT A MEASUREMENT. Raise it as the project
-# grows; lowering it is a visible diff that has to be defended.
+# It was `fail_under = 80`, described in this comment as "a starting floor,
+# not a measurement" - which was exactly the problem. A fixed floor in a
+# template meant for EXISTING repositories is red by construction: measured
+# on a real adoption, the subject stood at 7.45% and reaching 80 was ~200
+# tests away. A gate that cannot go green gets switched off.
+#
+# THE THRESHOLD NOW LIVES IN `docs/coverage-baseline.txt`, measured on the
+# day you adopt this template and enforced as a RATCHET by
+# `docs/reviews/check-coverage-ratchet.py`. Still exactly ONE place, so the
+# original rule below still holds: do not also pass `--cov-fail-under` on a
+# command line. Two places to change a threshold is one place to forget.
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
 source = ["src/fast_mcp_template"]
@@ -88,9 +110,16 @@ exclude_lines = [
   "raise NotImplementedError",
   "if TYPE_CHECKING:",
 ]
-fail_under = 80
 show_missing = true
 
+# ---------------------------------------------------------------------------
+# LINE WIDTH IS A PER-PROJECT VALUE, and it is declared here rather than
+# assumed. Change it freely - and when you do, edit row B1 of
+# `docs/OBLIGATIONS.md` in the SAME COMMIT, because that row anchors on
+# this literal. (That is not a hazard, it is the register working: on the
+# 2026-09-03 adoption, changing this line to 100 turned check-obligations
+# red naming B1 and B2 precisely. An unplanned positive control.)
+# ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 88
 target-version = "py312"
@@ -100,6 +129,44 @@ target-version = "py312"
 # illustrations and not code that runs.
 src = ["src", "tests"]
 extend-exclude = ["**/*.md"]
+
+# ---------------------------------------------------------------------------
+# THE CARRIED MACHINERY IS LINTED BUT NOT FORMAT-CHECKED, and this is the
+# one setting in the file that exists because of a measurement rather than
+# a preference.
+#
+# `ruff format --check .` WAS UNSATISFIABLE AT EVERY WIDTH on any repo the
+# template did not write. Measured on a real adoption, one variable, three
+# points, same tree:
+#
+#     line-length   subject src   template machinery
+#     88            21 files      0 files
+#     100           0 files       23 files
+#     120           -             27 files
+#
+# At 88 ruff wants to rewrap the HOST PROJECT's source. Above 88 it wants
+# to rewrap the 44 checkers carried in here, because widening the limit
+# tells `ruff format` to RE-JOIN lines that were split to fit 88. There is
+# no width where both sides are green, and the count gets worse as the
+# width grows - so this is a property of the mechanism, not of the number.
+#
+# WHY EXCLUDE RATHER THAN DISABLE THE GATE. Disabling `ruff format --check`
+# outright - the other option on the table - would stop checking the host
+# project's OWN code, which is the only code the gate is actually for. The
+# machinery is the part that is not yours and that you did not choose a
+# width for. So the exclusion is scoped to exactly that.
+#
+# WHY THIS IS SAFE FOR LINT, and it is worth being explicit because the
+# two are not symmetric: `E501` (line too long) can only ever be SATISFIED
+# by widening, never introduced by it, so the machinery stays fully LINTED
+# at any width you pick. Only `ruff format`, which rewrites, is
+# direction-sensitive. Nothing here is excluded from `ruff check`.
+#
+# IF YOU ADOPT THE MACHINERY AS YOUR OWN and want it formatted at your
+# width, delete this block and run `ruff format` once. That is a decision
+# with a diff, which is the point.
+[tool.ruff.format]
+exclude = ["docs/reviews/**", "scripts/**"]
 
 [tool.ruff.lint]
 select = [
@@ -143,6 +210,23 @@ convention = "google"
 ]
 "scripts/**" = ["S101", "S603", "S607", "ANN"]
 
+# ---------------------------------------------------------------------------
+# FULL STRICTNESS STAYS ON, and the setting is NOT the gate on its own.
+#
+# mypy runs at full strictness and reports everything it finds. What makes
+# the BUILD red is `docs/reviews/check-mypy-ratchet.py`: a NEW error
+# against `docs/mypy-baseline.txt`, rather than the inherited ones. On a
+# real adoption `--strict` from a standing start measured 158 errors in 20
+# files - days of work presented as a config change - so strictness is
+# preserved and only the cliff is removed.
+#
+# The literal setting below is anchored by OBLIGATIONS.md row B3, so this
+# comment deliberately does NOT repeat it: a second occurrence makes the
+# anchor ambiguous and the register refuses ambiguity rather than
+# resolving it to the first hit. It refused this very comment once.
+# Record the baseline on adoption:
+#   python3 docs/reviews/check-mypy-ratchet.py --record
+# ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.12"
 strict = true

@@ -18,27 +18,91 @@ uv run --frozen fastmcp inspect src/fast_mcp_template/server.py:mcp
 
 ## Start a project from this
 
+**Greenfield takes under an hour. Adopting an EXISTING repository does not** —
+budget 1–2 days for the machinery and the documents, and read
+[the migration note](#adopting-an-existing-repository) first. Every step
+below that is marked **MEASURED** exists because it was skipped once, on a
+real repository, on 2026-09-03, and the failure was silent.
+
 1. `git clone`, then `rm -rf .git && git init` — a template must not carry
    history into its children.
-2. Rename in this order, because later steps depend on earlier ones:
+2. **MEASURED — do this before anything else: put your default branch in
+   `on: push: branches:` in `.github/workflows/ci.yml`.** That key is static
+   YAML and is the only branch name in the file that cannot derive itself;
+   everything else now reads
+   `github.event.repository.default_branch`. It ships `[main, master, dev]`.
+   On a repo whose trunk is none of those, Gate, CodeQL and actionlint are
+   all **silently off** — the jobs are absent, and absent renders grey, not
+   red. `check-default-branch-is-triggered.py` runs in Gate and will fail
+   loudly if you skip this, which is the only reason it is safe to write
+   down rather than engineer away.
+3. Rename in this order, because later steps depend on earlier ones:
    `src/fast_mcp_template/` → your package; `pyproject.toml`'s `name`,
    `[project.scripts]`, `[tool.hatch...]`, `[tool.coverage.run] source`,
    `[tool.<name>.advisory-ignores]`; `FastMCP("...")` in `server.py`; the
-   `env_prefix` in `config.py`; this README's Quickstart and title.
+   `env_prefix` in `config.py`; this README's title.
    Then `uv lock && uv sync`.
-3. **Delete first:** `ping` and its tests, `docs/research/FASTMCP.md` once you
+4. **Record the two baselines.** Neither is defaulted, and neither can be
+   guessed:
+
+   ```bash
+   uv run --frozen pytest --cov --cov-report=json:coverage.json
+   uv run --frozen python docs/reviews/check-coverage-ratchet.py --record
+   uv run --frozen python docs/reviews/check-mypy-ratchet.py --record
+   git add docs/coverage-baseline.txt docs/mypy-baseline.txt
+   ```
+
+5. **Delete first:** `ping` and its tests, `docs/research/FASTMCP.md` once you
    have read it, and every `TODO` in the document shapes.
-4. Write `docs/DESIGN.md`, then freeze it: put the commit SHA that carries it
-   into `docs/DESIGN-FREEZE.txt`. Until you do, the freeze gate is comparing
-   the placeholder against itself, which is true and worth nothing.
-5. Fill `docs/OBLIGATIONS.md` with the standards clauses you actually owe.
+6. Write `docs/DESIGN.md`, commit it, then freeze it:
+
+   ```bash
+   bash scripts/refreeze.sh && git add docs/DESIGN-FREEZE.txt && git commit
+   ```
+
+   It is **two commits** because no commit can contain its own SHA. Until you
+   do this the freeze gate exits 2 — a task, not a failure — and says so.
+7. Fill `docs/OBLIGATIONS.md` with the standards clauses you actually owe.
+   **All five rows it ships are placeholders anchored on the template's own
+   config values**, so until you replace them a green there says nothing
+   about your project. And note the coupling that file now spells out:
+   **changing `line-length` means editing row B1 in the same commit**, or the
+   build goes red naming it.
+
+## Adopting an existing repository
+
+The template was applied to a real MCP server on 2026-09-03 and **green was
+not reached**. Eight defects came out of that; these are what is left for
+you after they were fixed.
+
+**`pyproject.toml`'s `[tool.*]` blocks are a REPLACEMENT, not a rename.**
+Keep every key your project already relies on before you paste them over —
+`asyncio_mode` cost the subject all 26 of its tests, erroring at collection,
+with nothing warning it. The block itself carries the full note.
+
+**`.gitignore`: two lines.** Delete any `uv.lock` entry — the Gate runs
+`uv sync --frozen` and `uv lock --check`, which need it tracked. And if your
+`.gitignore` has a stock Python `lib/` line, the `!scripts/lib/` re-inclusion
+this template ships must end up **after** it; git takes the last matching
+pattern. `scripts/check-scripts-lib-survives-gitignore.sh` proves both.
+
+**The policy tier arrives as ratchets, not floors.** `fail_under = 80` and a
+bare `--strict` gate are red by construction on any repository with history —
+the subject measured 7.45% coverage and 158 mypy errors. Both are now
+baselines you record on day one and may not regress. That is the difference
+between a gate that works from day one at 7% and one that gets switched off.
+
+**Expect real findings, and they are the point.** Ruff's wider selection
+surfaced 18 substantive issues in the subject's code that its own
+`select = ["E","F","I","W"]` could never see — missing `raise ... from`,
+silent `except: pass`, naive `datetime.now()`, `zip()` without `strict=`.
 
 ## The three CI tiers
 
 | Tier | Trigger | Target |
 |---|---|---|
 | **Gate** | every push and PR | under 3 min |
-| **Merge** | push to `main` | under 6 min |
+| **Merge** | push to the default branch | under 6 min |
 | **Assurance** | weekly cron, manual dispatch, or a push touching code | 60-70 min |
 
 `concurrency: cancel-in-progress` is set on Gate and Merge and is the single
@@ -57,10 +121,32 @@ code in it yet:
 | `check-design-freeze.py` | `docs/DESIGN.md` at the SHA in `DESIGN-FREEZE.txt` is the same **blob** as on the trunk |
 | `check-adr-numbers.py` | ADR numbers are unique and contiguous, and `adr/README.md` lists every one |
 | `check-obligations.py` | every row in `OBLIGATIONS.md` still resolves to a line containing its subject |
-| `check-quickstart.py` | the commands in this README's Quickstart are **parsed out of it and run** |
+| `check-default-branch-is-triggered.py` | this repository's default branch is in the workflow's push trigger, and no `if:` names a trunk literally |
+| `check-coverage-ratchet.py` | coverage has not fallen below `docs/coverage-baseline.txt` |
+| `check-mypy-ratchet.py` | no mypy error that `docs/mypy-baseline.txt` does not already record |
+
+Each of the last three ships with a controls script that plants the failure
+and requires the checker to refuse it, and those controls run in Gate too — a
+gate nobody has watched fail is a gate nobody has tested.
+
+`check-quickstart.py` **ships DISABLED.** It hardcodes `fastmcp inspect`,
+which takes a *file* and therefore cannot load a package using relative
+imports — the Python norm. The template's placeholder passes it only because
+that one file happens to use an absolute import, which made it a gate built
+to pass its own check. Its `UNWIRED_BY_DECISION` row names the turn-on
+condition.
 
 Plus the ordinary tooling: `ruff check`, `ruff format --check`, `mypy --strict`,
 `pytest --cov`, `uv lock --check`, and actionlint on the workflows.
+
+**`ruff format --check` excludes `docs/reviews/` and `scripts/`.** Not
+laziness: format-checking the carried machinery is unsatisfiable at any
+width. Measured, same tree, one variable — at `line-length = 88` ruff wants
+to rewrap 21 of a real subject's source files; at 100 it wants to rewrap 23
+of the template's own checkers; at 120, 27. Widening re-joins lines that were
+split for 88, so there is no width where both sides are green. Lint is
+unaffected and still covers everything: `E501` can only be satisfied by
+widening, never introduced by it.
 
 **The other checkers under `docs/reviews/` and `scripts/` are carried but
 DISABLED**, each with a one-line note in `UNWIRED_BY_DECISION` saying when to
@@ -95,6 +181,7 @@ docs/research/FASTMCP.md   FastMCP capabilities, carried from the first project
 docs/reviews/              the checkers, 5 enabled and the rest disabled
 scripts/                   harness machinery and the generic checkers
 scripts/lib/               harness-result.sh, verdict-guard.sh, select-covering-tests.py
+scripts/refreeze.sh        re-freeze DESIGN.md at the commit carrying it
 src/fast_mcp_template/     DELETE the placeholder server and write yours
 ```
 

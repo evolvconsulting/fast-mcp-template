@@ -3,7 +3,7 @@ name: CI
 # THREE TIERS, and the tiering is the point.
 #
 #   Gate       every push and PR      1 job     target under 3 min
-#   Merge      push to `main`         + CodeQL  target under 6 min
+#   Merge      push to default branch + CodeQL  target under 6 min
 #   Assurance  weekly cron, manual dispatch, or a push that touches code
 #
 # The tiering is visibility-agnostic so it works whether this repository is
@@ -12,7 +12,9 @@ name: CI
 # ran 16 parallel jobs on every push, which bills 16 per-job roundings to buy
 # latency no human experiences on a weekly harness.
 #
-# WHAT THE TEMPLATE ENABLES, and why it is a short list. Five gates run here.
+# WHAT THE TEMPLATE ENABLES, and why it is a short list. The enabled
+# gates are named by their steps below; `check-quickstart.py` is
+# deliberately NOT among them (see UNWIRED_BY_DECISION for why).
 # Everything else under `docs/reviews/` and `scripts/` is carried DISABLED,
 # with the reason in `UNWIRED_BY_DECISION` inside
 # `docs/reviews/check-checkers-are-wired.py`. Turn a gate on when this project
@@ -21,12 +23,35 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # ================================================================
+    # THE ONE LINE AN ADOPTER MUST EDIT, AND THE ONLY ONE THAT CANNOT
+    # DERIVE ITSELF. `on:` is static YAML: GitHub evaluates no
+    # expression here, so `github.event.repository.default_branch`
+    # - which every other branch condition in this file now uses -
+    # is unavailable at this key. It must be a literal list.
+    #
+    # WHY THAT IS DANGEROUS RATHER THAN MERELY ANNOYING. A repository
+    # whose default branch is not in this list gets NO Gate run on a
+    # push to its own trunk, and the tier does not go red: it is
+    # simply ABSENT. Switched-off and broken render identically, which
+    # is how 119 consecutive failures went unread on the project this
+    # template came from. Measured on a real adoption: the subject's
+    # default branch was `dev`, and Gate, CodeQL and actionlint were
+    # all silently off.
+    #
+    # SO IT IS NOT LEFT TO A COMMENT. The Gate job runs
+    # `check-default-branch-is-triggered.py`, which reads this list
+    # and this repository's actual default branch and FAILS if the
+    # default is missing. A comment is not a gate; that step is.
+    # (It still fires on a repo whose push trigger is off, because
+    # `pull_request` carries no branch filter and runs Gate anyway.)
+    # ================================================================
+    branches: [main, master, dev]
     # PATH FILTERS. A README-only change must not run the suite. Keep this
     # list in step with what the jobs below actually read.
     paths-ignore:
       - '**/*.md'
-      - '!README.md'          # the Quickstart gate PARSES this one
+      - '!README.md'          # the adoption instructions live here
       - 'LICENSE'
       - 'NOTICE'
   pull_request:
@@ -34,13 +59,28 @@ on:
     - cron: '0 0 * * 0'
   workflow_dispatch:
 
-# THE SINGLE HIGHEST-VALUE LINE IN THIS FILE. Without cancel-in-progress a
-# busy branch bills every superseded run; one repository elsewhere consumed
-# 83% of a month's bill this way. `main` is exempt: a merge queue must not
-# cancel the run that is establishing the trunk is green.
+# THE SINGLE HIGHEST-VALUE LINE IN THIS FILE (below). Without
+# cancel-in-progress a busy branch bills every superseded run; one
+# repository elsewhere consumed 83% of a month's bill this way. The
+# TRUNK is exempt: a merge queue must not cancel the run that is
+# establishing the trunk is green.
+#
+# THE TRUNK IS DERIVED, NOT NAMED. This read `'refs/heads/main'` and
+# on a repo whose default branch is `dev` the trunk quietly lost its
+# exemption. `github.event.repository.default_branch` is populated on
+# `push` and `pull_request`, which is where a concurrency race can
+# happen at all.
+#
+# RESIDUAL, STATED RATHER THAN ASSUMED: on an event whose payload
+# carries no `repository` the expression compares against the string
+# `refs/heads/`, matches nothing, and cancel-in-progress is TRUE. For
+# `schedule` and `workflow_dispatch` that is harmless - those fire one
+# run at a time - but it is the permissive direction and it is here in
+# writing rather than discovered later.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: >-
+    ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
 permissions:
   contents: read
@@ -91,7 +131,8 @@ jobs:
           # there and `rc=$?` never runs - every diagnostic branch below
           # would be unreachable. This `set +e` is what makes `rc` reachable.
           set +e
-          out=$(uv run --frozen pytest --cov --cov-report=term-missing 2>&1); rc=$?
+          out=$(uv run --frozen pytest --cov --cov-report=term-missing \
+                --cov-report=json:coverage.json 2>&1); rc=$?
           echo "$out"
           [ "$rc" -eq 0 ] || exit "$rc"
           # A SKIP IS A GREEN THAT TESTED NOTHING. Deselect an excluded arm
@@ -103,8 +144,20 @@ jobs:
             exit 1
           fi
 
-      - name: The README's Quickstart still works
-        run: uv run --frozen python docs/reviews/check-quickstart.py
+      - name: Coverage has not fallen below its recorded baseline
+        run: uv run --frozen python docs/reviews/check-coverage-ratchet.py
+
+      - name: No mypy error that the baseline does not already record
+        run: uv run --frozen python docs/reviews/check-mypy-ratchet.py
+
+      - name: This repository's default branch is actually triggered
+        env:
+          # PASSED IN, not read inside the checker. The context is only
+          # available to the workflow, and a checker that reached for it
+          # would be unrunnable locally - so it takes the name and falls
+          # back to `refs/remotes/origin/HEAD` off the clone.
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: uv run --frozen python docs/reviews/check-default-branch-is-triggered.py
 
       - name: The design at its declared freeze is the design on the trunk
         run: uv run --frozen python docs/reviews/check-design-freeze.py
@@ -143,11 +196,30 @@ jobs:
       - name: The wiring checker's own controls still fire
         run: uv run --frozen python docs/reviews/check-checkers-are-wired.py --self-test
 
+      - name: The default-branch checker's own controls still fire
+        run: bash docs/reviews/check-default-branch-controls.sh
+
+      - name: The design-freeze checker's own controls still fire
+        run: bash docs/reviews/check-design-freeze-controls.sh
+
+      - name: Both ratchets' own controls still fire
+        run: uv run --frozen bash docs/reviews/check-ratchet-controls.sh
+
+      - name: scripts/lib survives a host project's stock .gitignore
+        run: bash scripts/check-scripts-lib-survives-gitignore.sh
+
   # ---------------------------------------------------------------------
-  # MERGE - push to `main` only. Gate has already run on the same commit.
+  # MERGE - push to the DEFAULT BRANCH only. Gate has already run on
+  # the same commit.
   # ---------------------------------------------------------------------
   codeql:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # THE TRUNK IS DERIVED, NOT NAMED - see the concurrency block above.
+    # Written `'refs/heads/main'` this job never ran at all on a repo
+    # whose default branch is `dev`, and a job that never runs renders
+    # GREY, not red.
+    if: >-
+      github.event_name == 'push'
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -160,7 +232,13 @@ jobs:
       - uses: github/codeql-action/analyze@v3
 
   workflow-lint:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # THE TRUNK IS DERIVED, NOT NAMED - see the concurrency block above.
+    # Written `'refs/heads/main'` this job never ran at all on a repo
+    # whose default branch is `dev`, and a job that never runs renders
+    # GREY, not red.
+    if: >-
+      github.event_name == 'push'
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

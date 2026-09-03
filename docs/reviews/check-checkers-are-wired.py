@@ -219,6 +219,31 @@ _WIRED_SUBJECT = "check-design-freeze.py"
 #: stale-exemption check below, which is the point of checking the
 #: reverse direction.
 UNWIRED_BY_DECISION: dict[str, str] = {
+    "refreeze.sh": (
+        "NOT A CHECKER: the one-line procedure that writes the commit "
+        "carrying docs/DESIGN.md into docs/DESIGN-FREEZE.txt. It is a "
+        "TOOL a human runs on adoption and after every design change, "
+        "so it can only ever read UNWIRED - the container is bounded by "
+        "directory and suffix on purpose, and carving out an exception "
+        "for 'tools' is how a population starts filtering by a property "
+        "somebody picks. Wiring it would make CI REWRITE the freeze "
+        "pointer, which is the one thing the freeze gate exists to stop."
+    ),
+    "check-quickstart.py": (
+        "SHIPPED DISABLED, and the reason is a measurement rather than "
+        "a preference. Its MUST_PRINT is hardcoded to `Tools:` - the "
+        "output of `fastmcp inspect` - and `fastmcp inspect` takes a "
+        "FILE, so it cannot load a package whose modules use RELATIVE "
+        "imports. Applied to a real MCP server on 2026-09-03 it was "
+        "unfixable by configuration: `attempted relative import with "
+        "no known parent package`. The template's own placeholder "
+        "passes only because it happens to use an ABSOLUTE import, "
+        "which makes this a gate built to pass its own check. It also "
+        "hardcodes the `## Quickstart` heading. TURN ON once the "
+        "assertion is PROJECT-DECLARED - your README naming what its "
+        "last Quickstart command must print - rather than "
+        "`fastmcp inspect`-shaped, and only after measuring it green."
+    ),
     "check-brief-report-references.py": (
         "TURN ON when docs/briefs/ holds real briefs. It refuses a "
         "brief that cites a report nobody committed; over the "

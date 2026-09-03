@@ -1,0 +1,12 @@
+# MYPY RATCHET BASELINE, measured - never decreed.
+#
+# One row per (file, error code), with how many of that pair exist.
+# Written by:
+#   python3 docs/reviews/check-mypy-ratchet.py --record
+#
+# `strict = true` is UNCHANGED in pyproject.toml. mypy still reports
+# every error below on every run. This file only decides which of
+# them make the BUILD red: the new ones.
+#
+# Rows come OUT of this file as they are fixed, in the same commit
+# as the fix. A baseline nobody shrinks is a permanent allowance.

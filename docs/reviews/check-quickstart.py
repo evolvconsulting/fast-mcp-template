@@ -25,7 +25,18 @@ line cannot be quietly ignored.
 **Exit code is not enough for the one command that matters.**
 `fastmcp inspect` prints an ERROR and exits 0 when pointed at a path
 with no server object - measured, and it is how a wrong factory path
-looks identical to a working one. So the output is asserted too.
+looks identical to a working one. So the output is asserted too, and
+the ERROR assertion is tested BEFORE the success assertion so that a
+failing command reports its own error rather than a missing needle.
+
+**THIS CHECKER SHIPS DISABLED IN THE TEMPLATE.** See its row in
+`UNWIRED_BY_DECISION` inside `check-checkers-are-wired.py`. In short:
+`fastmcp inspect` takes a FILE and therefore cannot load a package that
+uses relative imports, which is the Python norm; the template's own
+placeholder server passes only because it happens to use an absolute
+one. Until the assertion is declared by the PROJECT rather than shaped
+around `fastmcp inspect`, this gate cannot be made green on a normally
+structured package - measured on a real repository, 2026-09-03.
 """
 
 from __future__ import annotations
@@ -114,15 +125,24 @@ def main() -> int:
             print("\n".join(f"        {line}" for line in output.splitlines()[:15]))
             return 1
 
+        # MUST_NOT_PRINT IS TESTED FIRST, and the order fixes a
+        # measured misdiagnosis. On a real repository the command
+        # printed `ERROR File not found` AND EXITED 0. Tested the
+        # other way round, the first refusal to fire was `'Tools:'
+        # is not in the output` - true, useless, and it points the
+        # reader at the assertion instead of at the error the tool
+        # actually printed. The louder signal wins the report.
+        for needle in MUST_NOT_PRINT:
+            if needle in output:
+                print(f"        exit 0 but the output contains {needle!r}.")
+                print("        The command FAILED and said so while exiting 0.")
+                print("\n".join(f"        {line}" for line in output.splitlines()[:15]))
+                return 1
         for needle in MUST_PRINT:
             if needle not in output:
                 print(f"        exit 0 but {needle!r} is not in the output.")
                 print("        A Quickstart that exits 0 while printing the wrong")
                 print("        thing is the failure this assertion exists for.")
-                return 1
-        for needle in MUST_NOT_PRINT:
-            if needle in output:
-                print(f"        exit 0 but the output contains {needle!r}.")
                 return 1
         print("        ok")
 

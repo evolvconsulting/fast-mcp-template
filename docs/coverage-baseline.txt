@@ -1,0 +1,9 @@
+# COVERAGE RATCHET BASELINE, measured - never decreed.
+#
+# Written by:
+#   uv run --frozen pytest --cov --cov-report=json:coverage.json
+#   python3 docs/reviews/check-coverage-ratchet.py --record
+#
+# It may go UP. It may not go DOWN. Raising it is a commit that
+# says so; lowering it is a commit that has to be defended.
+88.46
