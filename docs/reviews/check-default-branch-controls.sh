@@ -33,7 +33,13 @@ plant() {
 run_arm() {
   local name=$1 dir=$2 branch=$3 want=$4 got
   arms=$((arms + 1))
-  DEFAULT_BRANCH="$branch" python3 "$dir/$CHECKER" >"$WORK/out" 2>&1
+  # CI's EXACT INVOCATION, not a bare python3. The checker imports PyYAML,
+  # which is in the locked environment and NOT in a runner's system python.
+  # Invoking it differently here made every arm die with
+  # ModuleNotFoundError on the first real CI run, while passing locally
+  # because this machine's bare python3 happens to have PyYAML installed.
+  # A control must run its subject the way production runs it.
+  DEFAULT_BRANCH="$branch" uv run --frozen python "$dir/$CHECKER" >"$WORK/out" 2>&1
   got=$?
   if [ "$got" -eq "$want" ]; then
     passed=$((passed + 1))
