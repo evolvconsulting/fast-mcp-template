@@ -80,6 +80,45 @@ Keep every key your project already relies on before you paste them over —
 `asyncio_mode` cost the subject all 26 of its tests, erroring at collection,
 with nothing warning it. The block itself carries the full note.
 
+**KEEP THESE, whatever the template says.** The rename list above tells you
+what to change; nothing told you what not to lose, which is how the subject
+lost its whole suite. Before pasting any `[tool.*]` block, copy out of your
+existing one:
+
+| key | why losing it hurts |
+|---|---|
+| `[tool.pytest.ini_options] asyncio_mode` | every async test errors at collection, and pytest reports it as an error rather than a failure |
+| `[tool.pytest.ini_options] testpaths` | the template's value points at *its* layout; yours may collect nothing, which reads as a pass |
+| `[tool.pytest.ini_options] markers` | unregistered markers become warnings, and `filterwarnings = error` turns them into failures |
+| `[tool.coverage.run] source` / `omit` | the wrong `source` measures the wrong tree and reports a number that means nothing |
+| `[tool.ruff] line-length` | see the next paragraph — this one decides whether a gate is satisfiable at all |
+| `[tool.mypy] files` / any `overrides` | narrowing `files` silently un-checks whatever you drop |
+
+The rule behind the table: **a key whose absence changes what gets COLLECTED
+or MEASURED is not a style choice.** Losing it does not go red; it goes quiet.
+
+**`ruff format --check .` will be red on your first run, and the fix is one
+command.** The Gate runs it (`ci.yml:120`) and the template's carried
+machinery — every checker and probe under `docs/reviews/` and `scripts/` — is
+formatted at `line-length = 88`. If your project uses any other width, that
+machinery is unformatted *by your rules* and the gate is unsatisfiable until
+somebody reformats it. Measured on the subject at both 88 and 100: red at
+each, for opposite reasons, because a line split to fit a narrower limit gets
+re-joined at a wider one.
+
+So set your width first, then reformat everything you inherited, in the
+adoption commit:
+
+```bash
+# after editing [tool.ruff] line-length to your project's value
+uv run --frozen ruff format .
+git add -A && git commit -m "chore: reformat carried machinery at our width"
+```
+
+Do this BEFORE you push, or the first CI run is red for a reason that has
+nothing to do with your code. It is a one-time cost: once the machinery is at
+your width, the gate stays satisfiable.
+
 **`.gitignore`: two lines.** Delete any `uv.lock` entry — the Gate runs
 `uv sync --frozen` and `uv lock --check`, which need it tracked. And if your
 `.gitignore` has a stock Python `lib/` line, the `!scripts/lib/` re-inclusion
