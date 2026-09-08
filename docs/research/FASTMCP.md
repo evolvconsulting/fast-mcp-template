@@ -513,7 +513,7 @@ Access HTTP headers inside middleware via `get_http_headers()` from `fastmcp.ser
 
 ### Context
 
-Public API of `fastmcp.Context` `[FROM SOURCE]`. ⚠️ This listing was enumerated on 3.4.7 and **not re-enumerated on 4.0.0b4**; the documented 4.0 removals (`sample`, `sample_step`, `list_roots`) are not reflected below. Treat it as indicative, not authoritative:
+Public API of `fastmcp.Context` `[FROM SOURCE]`. ⚠️ This listing was enumerated on 3.4.7 and **not re-enumerated on 4.0.3**; its membership was verified in neither direction. A spot-check with `dir(fastmcp.Context)` on the installed 4.0.3 (2026-09-08) found the documented 4.0 removals (`sample`, `sample_step`, `list_roots`) gone AND three members the listing never mentions present (`client_extension_settings`, `input_responses`, `request_state`), so the known drift is six symbols, not three. Treat it as indicative, not authoritative:
 
 ```
 client_id, client_supports_extension, close_sse_stream, debug, delete_state,

@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Advisory-expiry owner. DESIGN.md:1586-1605, step 3 and step 4 only.
+"""Advisory-expiry owner: steps 3 and 4 of the advisory-ignore policy.
+
+THE POLICY IS NOT IN THIS TEMPLATE'S DESIGN.md YET. docs/DESIGN.md is a
+placeholder, so the policy steps this file names are the SOURCE
+project's, carried so the shape survives. Until 2026-09-08 this
+docstring cited that project's line numbers (DESIGN.md:1586-1605 and
+five sibling ranges), every one dangling here. When your DESIGN.md
+gains an advisory-ignore section, cite it in this file and turn the
+gate on; check-design-citations.py exists to catch the drift after.
 
 WHY THIS EXISTS. `pip-audit` fails on ANY advisory: it has no severity
 threshold, so one advisory anywhere in the transitive tree turns a
@@ -20,19 +28,19 @@ drifting.
 
 **THE TABLE IS THE SINGLE SOURCE FOR BOTH THE FLAGS AND THE EXPIRY.**
 Nothing here hand-maintains a second list of ids beside it. Two lists
-that must agree is the defect DESIGN.md:1601-1603 names, and it fails by
-going silently stale.
+that must agree is the defect the policy's step 4 names, and it fails
+by going silently stale.
 
 WHAT THIS DOES NOT DO, stated because a control trusted for the wrong
 thing is worse than no control. **Step 1 of the policy - reachability -
 is human judgement written down, and it is NOT here**
-(DESIGN.md:1588-1591). This script cannot tell whether our code reaches
+(policy step 1). This script cannot tell whether our code reaches
 a vulnerable path. It enforces the SHAPE of a recorded judgement: that
 one was made, was written down, named a single advisory, and carries an
 expiry that has not passed. A well-formed entry with a dishonest
 `reason` passes this gate cleanly.
 
-THE FOUR FIELDS a legal entry must carry (DESIGN.md:1594-1599):
+THE FOUR FIELDS a legal entry must carry (policy step 3):
 
   id the advisory id. Required and non-blank. An entry without one is a
           BLANKET ignore - it suppresses every future advisory, not just
@@ -68,7 +76,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_IGNORE_DAYS = 30
-"""DESIGN.md:1596-1597 - `an expiry date no more than 30 days out`."""
+"""Policy step 3: `an expiry date no more than 30 days out`."""
 
 TABLE_PATH = ("tool", "fast-mcp-template", "advisory-ignores")
 """The single source. Nothing else in this file names an advisory id."""
@@ -242,7 +250,7 @@ def check_entries(
         if not isinstance(advisory_id, str) or not advisory_id.strip():
             refusals.append(
                 f"{where}: no advisory id - a BLANKET ignore, forbidden by "
-                f"DESIGN.md:1604-1605"
+                f"policy step 4"
             )
             continue
         where = f"entry {index} ({advisory_id})"
@@ -299,7 +307,7 @@ def check_entries(
         if budget > MAX_IGNORE_DAYS:
             refusals.append(
                 f"{where}: expiry is {budget} days after {recorded.isoformat()}, "
-                f"more than the {MAX_IGNORE_DAYS} DESIGN.md:1596-1597 allows"
+                f"more than the {MAX_IGNORE_DAYS} policy step 3 allows"
             )
             continue
 
@@ -326,7 +334,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         could not run.
     """
     parser = argparse.ArgumentParser(
-        description="Advisory-expiry gate. DESIGN.md:1586-1605."
+        description="Advisory-expiry gate, policy steps 3 and 4."
     )
     parser.add_argument(
         "--pyproject",

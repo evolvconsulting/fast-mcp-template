@@ -27,6 +27,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/fast_mcp_template"]
 
+# `prerelease = "explicit"` is KEPT as a guard stricter than uv's own
+# default (`if-necessary-or-explicit`): it refuses a future transitive
+# prerelease unless something names it, instead of accepting one when
+# the resolver has no other choice. It is INERT today, measured on
+# 2026-09-08 by removing it and re-locking: the resolved set did not
+# change, because nothing in the tree is a prerelease any more. It was
+# load-bearing while fastmcp was pinned to a beta.
 [tool.uv]
 prerelease = "explicit"
 
