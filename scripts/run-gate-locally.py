@@ -46,12 +46,15 @@ other, in `run:` and in `env:` alike. Guessing `main` would replay
 that gate against a value nobody measured.
 
 WHAT IT REFUSES, loudly, rather than approximating, each exit 2 with
-the step named: an expression it cannot resolve; a step with `if:`;
-a shell other than the default or `bash`; a step with
-`continue-on-error:`, because honouring it would need the replay to
-keep going past a red step and refusing is the honest cheap option; a
-`working-directory` that does not exist; an unknown job; and a job
-that would replay ZERO run steps. A replay that silently skipped or
+the step named: an expression it cannot resolve, in `run:` or in
+`env:` at any of the three scopes; a step with `if:`, and a JOB with
+`if:` (every job here except the gate carries one, and a job replayed
+past its own condition is a green nobody asked for); a shell other
+than the default or `bash`; a step with `continue-on-error:`, because
+honouring it would need the replay to keep going past a red step and
+refusing is the honest cheap option; a `working-directory` that does
+not exist; an unknown job; and a job that would replay ZERO run steps.
+A replay that silently skipped or
 softened a step would be a green that tested nothing, which is the
 defect this whole repository is built to refuse. `uses:` steps
 (checkout, setup-uv) are environment, not checks; they are listed as
@@ -91,10 +94,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 EXIT_UNTRUSTED = 2
 # GitHub, Linux, no `shell:` anywhere: `bash -e {0}`.
-SHELL_DEFAULT = ["bash", "-e", "-c"]
+SHELL_DEFAULT = ["bash", "-e"]
 # GitHub, explicit `shell: bash`:
 # `bash --noprofile --norc -eo pipefail {0}`.
-SHELL_BASH = ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c"]
+SHELL_BASH = ["bash", "--noprofile", "--norc", "-eo", "pipefail"]
 EXPR = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
 
 Resolvers = dict[str, Callable[[], str]]
@@ -194,9 +197,14 @@ def refusals(
 ) -> list[str]:
     """Why this job cannot be replayed faithfully, one line each."""
     out: list[str] = []
-    for key, value in (spec.get("env") or {}).items():
-        for expr in unresolvable(str(value), resolvers):
-            out.append(f"job env {key} carries an unresolvable expression: {expr}")
+    if "if" in spec:
+        out.append("the job has an if: condition")
+    for scope, block in (("workflow", doc.get("env")), ("job", spec.get("env"))):
+        for key, value in (block or {}).items():
+            for expr in unresolvable(str(value), resolvers):
+                out.append(
+                    f"{scope} env {key} carries an unresolvable expression: {expr}"
+                )
     run_steps = 0
     for i, step in enumerate(spec.get("steps", []), start=1):
         name = step.get("name", f"step {i}")
@@ -229,16 +237,29 @@ def refusals(
 def run_step(
     shell: list[str], script: str, env: dict[str, str], cwd: Path
 ) -> tuple[int, str, float]:
-    """Run one `run:` block under the shell GitHub would use for it."""
+    """Run one `run:` block under the shell GitHub would use for it.
+
+    GitHub writes the block to a file and runs `bash -e {0}` on it;
+    so does this, rather than `bash -c "<script>"`, so that `$0` and
+    `BASH_SOURCE` name a file as they do on a runner.
+    """
     start = time.monotonic()
-    done = subprocess.run(  # noqa: S603 - argv list, no shell=True
-        [*shell, script],
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".sh", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(script)
+        path = handle.name
+    try:
+        done = subprocess.run(  # noqa: S603 - argv list, no shell=True
+            [*shell, path],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        os.unlink(path)
     return done.returncode, done.stdout + done.stderr, time.monotonic() - start
 
 
@@ -276,8 +297,12 @@ def replay(
         # a --root replay of another repository. Dropped, so a step
         # sees the environment CI gives it.
         base_env.pop("VIRTUAL_ENV", None)
-        for key, value in (spec.get("env") or {}).items():
-            base_env[key] = resolve(str(value), resolvers)
+        # GitHub layers env: workflow, then job, then step, later
+        # scopes winning. The workflow scope was silently dropped
+        # until review round 2 planted one and watched it vanish.
+        for block in (doc.get("env"), spec.get("env")):
+            for key, value in (block or {}).items():
+                base_env[key] = resolve(str(value), resolvers)
     except LookupError as exc:
         print(f"REFUSED: {exc}")
         return EXIT_UNTRUSTED
@@ -470,6 +495,30 @@ def self_test() -> int:
                 127,
             ),
             (
+                "workflow-level env reaches the step",
+                "on: push\nenv:\n  PLANT: seed\njobs:\n  gate:\n    runs-on: x\n"
+                "    steps:\n      - name: env\n"
+                '        run: test "$PLANT" = seed\n',
+                0,
+            ),
+            (
+                "a workflow-level env expression nobody can resolve is refused",
+                "on: push\nenv:\n  X: ${{ secrets.NOPE }}\njobs:\n  gate:\n"
+                "    runs-on: x\n    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a job-level if: is refused",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    if: always()\n"
+                "    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "the script runs from a file, so $0 names one, as on a runner",
+                head + '      - name: zero\n        run: test -f "$0"\n',
+                0,
+            ),
+            (
                 "the parent's VIRTUAL_ENV does not reach a step",
                 head + '      - name: venv\n        run: test -z "${VIRTUAL_ENV:-}"\n',
                 0,
@@ -484,7 +533,14 @@ def self_test() -> int:
         try:
             for label, jobs, expected in cases:
                 write(jobs)
-                got = replay(wf, "gate", root=root, resolvers=fake, tail=5)
+                got: int | str
+                try:
+                    got = replay(wf, "gate", root=root, resolvers=fake, tail=5)
+                except Exception as exc:
+                    # Round 2 amputated a refusal and the whole battery
+                    # died at case 12 of 22 with a traceback; the nine
+                    # cases behind it never ran. A crash is one FAIL.
+                    got = f"{type(exc).__name__}: {exc}"
                 ok = got == expected
                 mark = "ok  " if ok else "FAIL"
                 print(f"{mark} {label}: expected {expected}, got {got}")
