@@ -201,6 +201,16 @@ To see the list and the reasons:
 uv run --frozen python docs/reviews/check-checkers-are-wired.py
 ```
 
+**Before you push, replay the Gate the way CI runs it.** Do not copy lines
+out of `ci.yml` by hand; that copy drifts, and a gate run without CI's
+flags is a weaker question (measured twice on this family). The replayer
+parses the workflow and runs the Gate job's own `run:` steps, one exit
+code per line, refusing anything it cannot replay faithfully:
+
+```bash
+uv run --frozen python scripts/run-gate-locally.py
+```
+
 ## ADRs
 
 Ship **zero** numbered ADRs from here. `docs/adr/0000-template.md` is the shape.

@@ -219,6 +219,18 @@ _WIRED_SUBJECT = "check-design-freeze.py"
 #: stale-exemption check below, which is the point of checking the
 #: reverse direction.
 UNWIRED_BY_DECISION: dict[str, str] = {
+    "run-gate-locally.py": (
+        "NOT A CHECKER: the tool that replays the Gate job on a "
+        "developer's machine by parsing ci.yml and running its own "
+        "`run:` steps, so nobody hand-copies CI's lines and drifts "
+        "(measured twice: a bare pytest, a python3 where CI says uv "
+        "run --frozen python). Wiring it would make CI run a replay "
+        "of itself, which proves nothing and doubles the bill. It "
+        "stays UNWIRED for the same reason as refreeze.sh: a tool a "
+        "human runs, in a container bounded by directory and suffix "
+        "on purpose. Its --self-test plants each refusal and a real "
+        "failure and requires detection."
+    ),
     "refreeze.sh": (
         "NOT A CHECKER: the one-line procedure that writes the commit "
         "carrying docs/DESIGN.md into docs/DESIGN-FREEZE.txt. It is a "
