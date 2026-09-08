@@ -1,6 +1,6 @@
 # FastMCP — Current Developer Reference
 
-**Target: `fastmcp==4.0.0b4` on Python 3.12.** Last revised 2026-08-27.
+**Target: `fastmcp==4.0.3` on Python 3.12.** Last revised 2026-09-08, when the pin moved from the beta `4.0.0b4` to the GA line. Only the pin, the release table and the dependency facts were re-derived on 4.0.3; every `[FROM SOURCE]` listing below was enumerated on 4.0.0b4 and has NOT been re-enumerated. Treat signatures as indicative until they are.
 
 Research method: PyPI JSON API, the official docs site `gofastmcp.com`, `modelcontextprotocol.io`,
 and direct inspection of installed source trees. Claims read out of a source tree rather than the
@@ -22,7 +22,7 @@ belongs to THAT document, never to this one - both files number their sections f
 
 | Decision | Recommendation |
 |---|---|
-| **Version to pin** | `fastmcp==4.0.0b4` **and** `fastmcp-slim==4.0.0b4` as direct dependencies, with `[tool.uv] prerelease = "explicit"`. Naming `fastmcp-slim` is not optional — without it the resolver either fails or drags in a *beta pydantic*. **[FASTMCP-SPIKE-4.md §1.3]** Pin `mcp` too: the one 4.0 defect we found was caused by a dependency major-bump underneath unchanged code. |
+| **Version to pin** | `fastmcp==4.0.3` as the only direct fastmcp dependency. While 4.x was a prerelease (until 2026-08-31) the pin also had to name `fastmcp-slim==4.0.0b4` and set `[tool.uv] prerelease = "explicit"`, because uv will not pull a transitive prerelease nobody named and without it the resolver either failed or dragged in a *beta pydantic*. **[FASTMCP-SPIKE-4.md §1.3]** A GA pin resolves `fastmcp-slim` on its own (measured 2026-09-08: `uv lock` moved both to 4.0.3 with nothing else named). Watch `mcp`, which resolves to 2.1.1 beneath 4.0.3: the one 4.0 defect we found was caused by a dependency major-bump underneath unchanged code. |
 | **Python floor** | **3.12** (per the standards). Verified working on 3.11.15 and 3.12.3; behaviour identical. **[FASTMCP-SPIKE-4.md §10.1]** |
 | **MCP spec revision we get** | **`2026-07-28`** (sessionless) by default, and `2025-11-25` for handshake-era clients — both served simultaneously from one server on one port. Proven, not quoted. **[FASTMCP-SPIKE-4.md §3.3]** |
 | **Transport** | **stdio by default**, Streamable HTTP opt-in via config. `mcp.run(transport="http", host=..., port=..., path="/mcp")`; `/mcp` is also the default path. `sse` is deprecated. A public repo gets both local and hosted users, so hardcoding HTTP locks out every local client. **[FASTMCP-SPIKE-4.md §7]** |
@@ -64,9 +64,13 @@ Source: `https://pypi.org/pypi/fastmcp/json`.
 | 3.4.0 | 2026-06-03 |
 | **3.4.7 (latest stable)** | **2026-08-10T21:17:51Z** |
 | 4.0.0b1 | 2026-07-28 |
-| 4.0.0b4 (latest prerelease) | 2026-08-26T22:59:04Z |
+| 4.0.0b4 | 2026-08-26T22:59:04Z |
+| 4.0.0b5 | 2026-08-28 |
+| 4.0.0 (GA) | 2026-08-31 |
+| 4.0.1, 4.0.2 | 2026-09-02 |
+| 4.0.3 (latest as of 2026-09-08) | 2026-09-05 |
 
-- `fastmcp` is a thin metapackage whose only base dependency is the matching `fastmcp-slim`. **This is why our pin must name both** — see the Bottom line. Extras: `anthropic`, `apps`, `azure`, `code-mode`, `gemini`, `openai`, `tasks`.
+- `fastmcp` is a thin metapackage whose only base dependency is the matching `fastmcp-slim` (`fastmcp-slim[client,server]==4.0.3` at 4.0.3). **Naming both was required only while 4.x was a prerelease** - see the Bottom line. Extras: `anthropic`, `apps`, `azure`, `code-mode`, `gemini`, `openai`, `tasks`.
 - `fastmcp-slim` 4.0.0b4 depends on `mcp>=2.0.0,<3.0.0` and `httpx2>=2.5.0` — a **major** SDK jump vs the 3.x line.
 
 ### MCP protocol revision
@@ -78,7 +82,7 @@ Source: `https://pypi.org/pypi/fastmcp/json`.
 
 ### Version and spec facts
 
-- `fastmcp` 4.0.0b4 released **2026-08-26**; 3.4.7 (last stable) 2026-08-10. `requires_python >=3.10`.
+- `fastmcp` 4.0.0 went GA on **2026-08-31** and 4.0.3 followed on 2026-09-05 (PyPI upload dates); the last 3.x release was 3.4.7 on 2026-08-10. `requires_python >=3.10`.
 - 4.0 resolves to `mcp` **2.1.1**, `mcp-types` 2.1.1, `starlette` 1.6.0, `httpx2` 2.12.0, and requires `pydantic>=2.12`. **[FASTMCP-SPIKE-4.md §1.1]**
 - The current published MCP spec revision is **`2026-07-28`**, per `https://modelcontextprotocol.io/specification/versioning`. 4.0 serves it **and** the older handshake revisions from the same server. **[FASTMCP-SPIKE-4.md §3]**
 - `server/discover` reports `supportedVersions: ["2026-07-28"]` **only**, despite demonstrably serving 2025-11-25 clients — do not treat that list as exhaustive. **[FASTMCP-SPIKE-4.md §3.1]**
@@ -665,15 +669,10 @@ Removals / renames:
 - Tasks moved to an extension: `mcp.add_extension(TasksExtension())` from `fastmcp_tasks`; `task=` only valid on tools.
 - Middleware hooks now observe **every** inbound message, including notifications and unroutable requests.
 
-Prerelease install:
+Install (4.0 has been GA since 2026-08-31, so the prerelease recipe that used to sit here, with its `constraint-dependencies` on `fastmcp-slim`, is no longer needed):
 
 ```bash
-pip install "fastmcp==4.0.0b3"
-```
-
-```toml
-[tool.uv]
-constraint-dependencies = ["fastmcp-slim==4.0.0b3"]
+pip install "fastmcp==4.0.3"
 ```
 
 ### Design rules for `fast-mcp-template` on 4.0

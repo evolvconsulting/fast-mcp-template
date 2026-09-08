@@ -4,10 +4,12 @@
 WHY THIS EXISTS. `pip-audit` fails on ANY advisory: it has no severity
 threshold, so one advisory anywhere in the transitive tree turns a
 required check red and blocks every merge, including the merge that
-fixes it. We pinned `fastmcp==4.0.0b4` and `mcp==2.1.1` deliberately
-(B72), so we should expect advisories and owe them a sanctioned response
-- because the unsanctioned response is a blanket ignore, which is the
-silent suppression the design forbids and which nobody ever removes.
+fixes it. `fastmcp` is pinned to an exact version in pyproject.toml
+(4.0.3 as of 2026-09-08) rather than a range, so we should expect
+advisories against a tree that does not float, and owe them a
+sanctioned response - because the unsanctioned response is a blanket
+ignore, which is the silent suppression the design forbids and which
+nobody ever removes.
 
 `pip-audit` has **no expiry concept and no `pyproject.toml` ignore
 section of its own**. That gap is the entire reason this script exists.
