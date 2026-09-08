@@ -31,12 +31,13 @@ belongs to THAT document, never to this one - both files number their sections f
 | **Required config** | pydantic-settings with non-defaulted fields. `fastmcp.json` **cannot** express a required env var and fails *silently*. **[FASTMCP-SPIKE-4.md §10]** |
 | **Mandatory workaround** | An **explicit** SIGTERM handler that raises `KeyboardInterrupt`, plus `os._exit(0)` after `run()` returns — or lifespan teardown never runs on container stop, and on stdio the process survives SIGTERM entirely. Do **not** use `signal.getsignal(SIGINT)`: it can install *ignore SIGTERM*. **[FASTMCP-SPIKE-4.md §19.5]** |
 
-### The httpx → httpx2 decision (open)
+### The httpx → httpx2 decision (SETTLED: httpx2)
 
 4.0 replaces `httpx` with **`httpx2`**, which reaches the public API (`Client.__init__` is typed
 `auth: httpx2.Auth`). `httpx` is not installed at all. The two **do** coexist as separate modules,
-so our Jobvite client may use either — but `except httpx.HTTPError` will never catch a
-FastMCP-raised exception. Keep every `except httpx.*` in one module. **[FASTMCP-SPIKE-4.md §1.2]**
+so a client could import either, but `except httpx.HTTPError` will never catch a
+FastMCP-raised exception: write against `httpx2`. See design rule 3 in the next
+section. **[FASTMCP-SPIKE-4.md §1.2]**
 
 ### Top 5 things `fast-mcp-jira` does that we must not copy
 
@@ -679,7 +680,7 @@ pip install "fastmcp==4.0.3"
 
 1. Never use `exclude_args=`, `serializer=`, `sampling_handler=`, `ctx.sample*`, `ctx.list_roots()` — all removed in 4.0, confirmed by signature.
 2. If we call `ctx.elicit()`, always pass `response_type`.
-3. Keep our HTTP client wrapper's `except httpx.*` clauses in **one module** so the `httpx2` swap is a single-file change.
+3. **The HTTP client is `httpx2`, and the swap is not future.** FastMCP 4 installs `httpx2` and does not install `httpx` at all (verified in this template's own environment: `import httpx2` gives 2.12.0, `import httpx` raises `ModuleNotFoundError`), so an `except httpx.*` clause carried forward from 3.x catches nothing at all. Write against `httpx2`. The one-module confinement rule this line used to carry is deliberately NOT reinstated for `httpx2`: fast-mcp-jobvite's ADR-0007 dropped it, on the ground that adopting `httpx2` REMOVES the hazard rather than guarding it, since your excepts and FastMCP's raises are then the same module. Confining your `except httpx2.*` clauses to one module is now a maintainability choice - it keeps a later transport change a one-file edit - and not a safety one. This template ships no HTTP client; its placeholder server has none.
 4. Use `mcp.mount(namespace=...)` semantics from day one if we ever compose servers.
 5. Pin `mcp` alongside `fastmcp`. The one 4.0 defect we found (§8, `ResponseLimitingMiddleware`) was a **regression caused by the `mcp` 1.x → 2.x bump underneath unchanged middleware code** — the characteristic hazard of early adoption.
 
