@@ -415,9 +415,12 @@ wrong are in §8, and none of them appears anywhere above.
 ## 8. What one real repository found, and the eight fixes
 
 **Subject:** `jeremy-newhouse/fast-mcp-jira` at `522f91b`, cloned read-only.
-**Full measurement:** `REPORT-accelerator-validation.md`.
-**Re-runnable:** `phase5-jira-proof/reapply.sh` re-applies the FIXED template to
-a fresh clone and prints the Gate tier with real exit codes.
+**Full measurement:** `reports/REPORT-accelerator-validation.md` in the evolv
+master folder (it lived at that folder's root until the 2026-09-08 reorganisation).
+**Re-runnable:** `reapply.sh` re-applies the FIXED template to a fresh clone and
+prints the Gate tier with real exit codes. It was archived, with the two scratch
+clones it drives, at `~/backups/phase5-jira-proof-2026-09-08/` when the Phase 5
+workspace was deleted on 2026-09-08 (restore the bundles with `--mirror`).
 
 **Before: 5 of 11 Gate steps green. After: 11 of 12.**
 
@@ -501,5 +504,6 @@ red should stay red. 131 + 48 + 18 = 197.
   on every one of them, which was the point.
 - **Whether `ruff format`'s two arms stay two arms below 88.** Three points were
   measured (88, 100, 120) and the mechanism predicts monotonicity upward only.
-- **The subject is on `fastmcp` 3.x and the template pins `4.0.0b4`.** Untouched,
+- **The subject is on `fastmcp` 3.x and the template pins a 4.x release** (`4.0.0b4`
+  when this was written; `4.0.3`, the GA line, since 2026-09-08). Untouched,
   because closing it means editing someone else's dependency graph.

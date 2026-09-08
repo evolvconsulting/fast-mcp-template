@@ -8,7 +8,10 @@ the project.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
+from fastmcp import Client
 from pydantic import ValidationError
 
 from fast_mcp_template import __main__ as main_module
@@ -28,6 +31,28 @@ def test_greet_falls_back_to_the_default(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_the_server_is_named_after_the_project() -> None:
     assert build_server().name == "fast-mcp-template"
+
+
+def test_ping_dispatches_through_the_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The tests above reach the tool BODY as a plain function. This one
+    # goes through fastmcp itself: registration, the in-process client,
+    # dispatch, the result. It is the only test that turns the Gate red
+    # when a pinned fastmcp breaks tool calling; a version bump that
+    # passes every other test here has proved nothing about that.
+    monkeypatch.setenv("MCP_TEMPLATE_GREETING", "hi")
+
+    async def call() -> None:
+        async with Client(build_server()) as client:
+            result = await client.call_tool("ping", {"name": "world"})
+        # `.content` is what the MCP protocol guarantees for a tool
+        # result; `.data` is FastMCP's own unwrapping of the structured
+        # content, a convenience that a future release could move for
+        # reasons unrelated to dispatch. Assert on both so this test
+        # fails for a dispatch break and not for a wrapper change alone.
+        assert result.content[0].text == "hi world"
+        assert result.data == "hi world"
+
+    asyncio.run(call())
 
 
 def test_main_runs_the_server(monkeypatch: pytest.MonkeyPatch) -> None:
