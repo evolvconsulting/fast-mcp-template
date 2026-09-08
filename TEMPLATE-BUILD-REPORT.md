@@ -504,5 +504,6 @@ red should stay red. 131 + 48 + 18 = 197.
   on every one of them, which was the point.
 - **Whether `ruff format`'s two arms stay two arms below 88.** Three points were
   measured (88, 100, 120) and the mechanism predicts monotonicity upward only.
-- **The subject is on `fastmcp` 3.x and the template pins `4.0.0b4`.** Untouched,
+- **The subject is on `fastmcp` 3.x and the template pins a 4.x release** (`4.0.0b4`
+  when this was written; `4.0.3`, the GA line, since 2026-09-08). Untouched,
   because closing it means editing someone else's dependency graph.

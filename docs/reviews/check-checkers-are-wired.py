@@ -284,10 +284,19 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "no heading."
     ),
     "check-design-citations.py": (
-        "TURN ON once code and documents cite DESIGN.md at "
-        "`file:line`. It checks every citation resolves to a line "
-        "that exists. The template ships zero citations, so it "
-        "would assert nothing."
+        "TURN ON once code and documents cite THIS project's "
+        "DESIGN.md at `file:line`. It checks every citation resolves "
+        "to a line that exists. Two things stop it today, both "
+        "measured 2026-09-08 (defect D9): the carried machinery still "
+        "holds 13 citations into the SOURCE project's design, every "
+        "one past the end of this 74-line placeholder, so wiring it "
+        "would land red; and its register file, "
+        "docs/reviews/REPOINT-EXEMPT.txt, was not carried into the "
+        "template, so it exits with RegisterError before it reads a "
+        "single citation. Restore the register and repoint or prose "
+        "the 13, then turn it on. The earlier reason here, that the "
+        "template ships zero citations, was false from the first "
+        "commit."
     ),
     "check-design-citation-shape.py": (
         "TURN ON with check-design-citations.py. It scans the SHAPE "

@@ -44,6 +44,12 @@ def test_ping_dispatches_through_the_protocol(monkeypatch: pytest.MonkeyPatch) -
     async def call() -> None:
         async with Client(build_server()) as client:
             result = await client.call_tool("ping", {"name": "world"})
+        # `.content` is what the MCP protocol guarantees for a tool
+        # result; `.data` is FastMCP's own unwrapping of the structured
+        # content, a convenience that a future release could move for
+        # reasons unrelated to dispatch. Assert on both so this test
+        # fails for a dispatch break and not for a wrapper change alone.
+        assert result.content[0].text == "hi world"
         assert result.data == "hi world"
 
     asyncio.run(call())

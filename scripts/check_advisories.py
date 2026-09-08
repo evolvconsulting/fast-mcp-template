@@ -4,10 +4,16 @@
 THE POLICY IS NOT IN THIS TEMPLATE'S DESIGN.md YET. docs/DESIGN.md is a
 placeholder, so the policy steps this file names are the SOURCE
 project's, carried so the shape survives. Until 2026-09-08 this
-docstring cited that project's line numbers (DESIGN.md:1586-1605 and
-five sibling ranges), every one dangling here. When your DESIGN.md
+docstring cited six line ranges in the 1500s of that project's design
+document, every one dangling here; they are written out as steps now,
+and deliberately not quoted in citation shape, because the citation
+checker's regex reads any such string as live. When your DESIGN.md
 gains an advisory-ignore section, cite it in this file and turn the
-gate on; check-design-citations.py exists to catch the drift after.
+gate on. The instrument for catching drift afterwards is
+check-design-citations.py, which is carried but cannot run until its
+register file, docs/reviews/REPOINT-EXEMPT.txt, is restored: it was
+not carried into the template (defect D9, with the three other
+checkers that still cite the source project's line numbers).
 
 WHY THIS EXISTS. `pip-audit` fails on ANY advisory: it has no severity
 threshold, so one advisory anywhere in the transitive tree turns a
