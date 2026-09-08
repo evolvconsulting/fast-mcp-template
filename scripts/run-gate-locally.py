@@ -3,11 +3,13 @@
 
     uv run --frozen python scripts/run-gate-locally.py
     uv run --frozen python scripts/run-gate-locally.py --job X
+    uv run --frozen python scripts/run-gate-locally.py --root W
     uv run --frozen python scripts/run-gate-locally.py --list
     uv run --frozen python scripts/run-gate-locally.py --self-test
 
-The first form replays the `gate` job; `--job` picks another; `--list`
-prints every job with its steps; `--self-test` plants failures.
+The first form replays the `gate` job; `--job` picks another; `--root`
+replays a worktree; `--list` prints every job with its steps;
+`--self-test` plants failures and requires detection.
 
 WHY THIS EXISTS. A gate run without CI's flags is a different, weaker
 question, and it was measured twice on this family: a bare `pytest`
@@ -16,31 +18,48 @@ CI says `uv run --frozen python`, each read as green or as a defect
 that CI did not share. The fix that keeps failing is "copy the lines
 out of ci.yml"; people copy them once and the copy drifts. So this
 tool has NO copy: it parses `.github/workflows/ci.yml` and runs each
-`run:` block of the chosen job, in order, the way GitHub does
-(`bash --noprofile --norc -eo pipefail`), with the job's and the
+`run:` block of the chosen job, in order, with the job's and the
 step's `env:` applied, and prints one `STEP <name>: rc=<n>` line per
 step so every exit code is read on its own line.
+
+THE SHELL IS THE ONE GITHUB WOULD USE, NOT THE ONE THAT SOUNDS RIGHT.
+GitHub's workflow-syntax reference, verbatim: "By default, fail-fast
+behavior is enforced using `set -e` for both `sh` and `bash`. When
+`shell: bash` is specified, `-o pipefail` is also applied." So a step
+with no `shell:` (and no `defaults.run.shell` on its job or workflow)
+runs under `bash -e`, WITHOUT pipefail, and `cmd1 | cmd2` passes when
+`cmd1` fails; an explicit `shell: bash` runs under
+`bash --noprofile --norc -eo pipefail`. The first version of this tool
+hardcoded the second form for every step and would have false-failed
+any adopter whose steps pipe; its reviewer caught it from the primary
+source. Any other shell value is refused.
 
 A THIRD DRIFT, FOUND BY THIS TOOL ON ITS FIRST RUN. The hand-copied
 replay this tool replaced ran the default-branch gate WITHOUT its
 step `env:`, so the checker fell back to reading git and passed; CI
 passes it `DEFAULT_BRANCH` set from
 `github.event.repository.default_branch`. Same script, different code
-path, same green. GitHub expressions are
-therefore handled explicitly: the tool expands the ones it can PROVE
-locally (today exactly one, the default branch, read from
-`refs/remotes/origin/HEAD`) and REFUSES any other, in `run:` and in
-`env:` alike. Guessing `main` would replay that gate against a value
-nobody measured.
+path, same green. GitHub expressions are therefore handled explicitly:
+the tool expands the ones it can PROVE locally (today exactly one, the
+default branch, read from `refs/remotes/origin/HEAD`) and REFUSES any
+other, in `run:` and in `env:` alike. Guessing `main` would replay
+that gate against a value nobody measured.
 
-WHAT IT REFUSES, loudly, rather than approximating: an expression it
-cannot resolve, a step with an `if:` condition, an unknown job, and a
-job that would replay ZERO run steps. Each is exit 2 with the step
-named. A replay that silently skipped a step would be a green that
-tested nothing, which is the defect this whole repository is built to
-refuse. `uses:` steps (checkout, setup-uv) are environment, not
-checks; they are listed as not replayed and counted, never skipped
-silently.
+WHAT IT REFUSES, loudly, rather than approximating, each exit 2 with
+the step named: an expression it cannot resolve; a step with `if:`;
+a shell other than the default or `bash`; a step with
+`continue-on-error:`, because honouring it would need the replay to
+keep going past a red step and refusing is the honest cheap option; a
+`working-directory` that does not exist; an unknown job; and a job
+that would replay ZERO run steps. A replay that silently skipped or
+softened a step would be a green that tested nothing, which is the
+defect this whole repository is built to refuse. `uses:` steps
+(checkout, setup-uv) are environment, not checks; they are listed as
+not replayed and counted, never skipped silently.
+
+KNOWN GAP, stated rather than hidden: `timeout-minutes:` is ignored.
+That only makes a local replay more patient than CI; it cannot
+manufacture a pass.
 
 WHAT IT IS NOT. It is not a checker and must never be wired into CI:
 CI running a replay of itself proves nothing. It is excused in
@@ -70,9 +89,12 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 EXIT_UNTRUSTED = 2
-SHELL = ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c"]
+# GitHub, Linux, no `shell:` anywhere: `bash -e {0}`.
+SHELL_DEFAULT = ["bash", "-e", "-c"]
+# GitHub, explicit `shell: bash`:
+# `bash --noprofile --norc -eo pipefail {0}`.
+SHELL_BASH = ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c"]
 EXPR = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
 
 Resolvers = dict[str, Callable[[], str]]
@@ -126,19 +148,50 @@ def resolve(value: str, resolvers: Resolvers) -> str:
     return EXPR.sub(lambda m: resolvers[m.group(1)](), value)
 
 
-def load_job(workflow: Path, job: str) -> dict[str, Any]:
-    """Return the job mapping for `job`, or raise KeyError naming it."""
+def load_workflow(workflow: Path) -> dict[str, Any]:
+    """Parse the workflow file; raise KeyError if it has no jobs."""
     doc: Any = yaml.safe_load(workflow.read_text(encoding="utf-8"))
-    jobs = doc.get("jobs") if isinstance(doc, dict) else None
-    if not isinstance(jobs, dict) or job not in jobs:
-        names = sorted(jobs) if isinstance(jobs, dict) else []
-        msg = f"no job {job!r} in {workflow}; jobs: {names}"
+    if not isinstance(doc, dict) or not isinstance(doc.get("jobs"), dict):
+        msg = f"{workflow} has no jobs mapping"
+        raise KeyError(msg)
+    return doc
+
+
+def job_spec(doc: dict[str, Any], job: str) -> dict[str, Any]:
+    """Return the job mapping for `job`, or raise KeyError naming it."""
+    jobs: dict[str, Any] = doc["jobs"]
+    if job not in jobs:
+        msg = f"no job {job!r}; jobs: {sorted(jobs)}"
         raise KeyError(msg)
     spec: dict[str, Any] = jobs[job]
     return spec
 
 
-def refusals(spec: dict[str, Any], resolvers: Resolvers) -> list[str]:
+def declared_shell(
+    doc: dict[str, Any], spec: dict[str, Any], step: dict[str, Any]
+) -> Any:
+    """The `shell:` in force: step, then job, then workflow defaults."""
+    if "shell" in step:
+        return step["shell"]
+    for scope in (spec, doc):
+        run_defaults = (scope.get("defaults") or {}).get("run") or {}
+        if "shell" in run_defaults:
+            return run_defaults["shell"]
+    return None
+
+
+def shell_for(declared: Any) -> list[str] | None:
+    """GitHub's invocation for a declared shell; None if unsupported."""
+    if declared is None:
+        return SHELL_DEFAULT
+    if declared == "bash":
+        return SHELL_BASH
+    return None
+
+
+def refusals(
+    doc: dict[str, Any], spec: dict[str, Any], resolvers: Resolvers, root: Path
+) -> list[str]:
     """Why this job cannot be replayed faithfully, one line each."""
     out: list[str] = []
     for key, value in (spec.get("env") or {}).items():
@@ -147,10 +200,11 @@ def refusals(spec: dict[str, Any], resolvers: Resolvers) -> list[str]:
     run_steps = 0
     for i, step in enumerate(spec.get("steps", []), start=1):
         name = step.get("name", f"step {i}")
-        if "run" in step:
-            run_steps += 1
-            for expr in unresolvable(step["run"], resolvers):
-                out.append(f"step {i} ({name}) run: unresolvable expression: {expr}")
+        if "run" not in step:
+            continue
+        run_steps += 1
+        for expr in unresolvable(str(step["run"]), resolvers):
+            out.append(f"step {i} ({name}) run: unresolvable expression: {expr}")
         for key, value in (step.get("env") or {}).items():
             for expr in unresolvable(str(value), resolvers):
                 out.append(
@@ -159,16 +213,26 @@ def refusals(spec: dict[str, Any], resolvers: Resolvers) -> list[str]:
                 )
         if "if" in step:
             out.append(f"step {i} ({name}) has an if: condition")
+        if "continue-on-error" in step:
+            out.append(f"step {i} ({name}) sets continue-on-error")
+        declared = declared_shell(doc, spec, step)
+        if shell_for(declared) is None:
+            out.append(f"step {i} ({name}) declares shell {declared!r}, not bash")
+        cwd = root / str(step.get("working-directory", "."))
+        if not cwd.is_dir():
+            out.append(f"step {i} ({name}) working-directory {cwd} does not exist")
     if run_steps == 0:
         out.append("the job has no run: steps, so a replay would test nothing")
     return out
 
 
-def run_step(script: str, env: dict[str, str], cwd: Path) -> tuple[int, str, float]:
-    """Run one `run:` block the way GitHub's default bash shell does."""
+def run_step(
+    shell: list[str], script: str, env: dict[str, str], cwd: Path
+) -> tuple[int, str, float]:
+    """Run one `run:` block under the shell GitHub would use for it."""
     start = time.monotonic()
     done = subprocess.run(  # noqa: S603 - argv list, no shell=True
-        [*SHELL, script],
+        [*shell, script],
         cwd=cwd,
         env=env,
         capture_output=True,
@@ -191,11 +255,12 @@ def replay(
     """Replay `job` from `workflow`; return the exit code to use."""
     resolvers = resolvers_for(root) if resolvers is None else resolvers
     try:
-        spec = load_job(workflow, job)
+        doc = load_workflow(workflow)
+        spec = job_spec(doc, job)
     except KeyError as exc:
         print(f"REFUSED: {exc}")
         return EXIT_UNTRUSTED
-    problems = refusals(spec, resolvers)
+    problems = refusals(doc, spec, resolvers, root)
     if problems:
         print(f"REFUSED to replay job {job!r}:")
         for line in problems:
@@ -232,12 +297,16 @@ def replay(
             try:
                 for key, value in (step.get("env") or {}).items():
                     env[key] = resolve(str(value), resolvers)
-                script = resolve(step["run"], resolvers)
+                script = resolve(str(step["run"]), resolvers)
             except LookupError as exc:
                 print(f"REFUSED at step {i} ({name}): {exc}")
                 return EXIT_UNTRUSTED
-            cwd = root / step.get("working-directory", ".")
-            rc, output, seconds = run_step(script, env, cwd)
+            shell = shell_for(declared_shell(doc, spec, step))
+            if shell is None:  # screened by refusals(); kept for the type
+                print(f"REFUSED at step {i} ({name}): unsupported shell")
+                return EXIT_UNTRUSTED
+            cwd = root / str(step.get("working-directory", "."))
+            rc, output, seconds = run_step(shell, script, env, cwd)
             replayed += 1
             print(f"STEP {i}/{total} {name}: rc={rc} ({seconds:.1f}s)")
             if verbose or rc != 0:
@@ -259,16 +328,17 @@ def replay(
 
 
 def self_test() -> int:
-    """Plant each refusal and one real failure; require detection."""
+    """Plant each refusal and each shell rule; require detection."""
     fake: Resolvers = {"github.event.repository.default_branch": lambda: "main"}
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        (root / "sub").mkdir()
         wf = root / "ci.yml"
 
-        def write(jobs: str) -> None:
-            wf.write_text("on: push\njobs:\n" + jobs, encoding="utf-8")
+        def write(text: str) -> None:
+            wf.write_text(text, encoding="utf-8")
 
-        head = "  gate:\n    runs-on: x\n    steps:\n"
+        head = "on: push\njobs:\n  gate:\n    runs-on: x\n    steps:\n"
         cases: list[tuple[str, str, int]] = [
             (
                 "second step exits 3 and is reported",
@@ -279,8 +349,15 @@ def self_test() -> int:
             ),
             (
                 "job env reaches the step",
-                "  gate:\n    runs-on: x\n    env:\n      PLANT: seed\n"
-                '    steps:\n      - name: env\n        run: test "$PLANT" = seed\n',
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    env:\n"
+                "      PLANT: seed\n    steps:\n      - name: env\n"
+                '        run: test "$PLANT" = seed\n',
+                0,
+            ),
+            (
+                "a block scalar run with env and two lines",
+                head + "      - name: block\n        env:\n          A: one\n"
+                '        run: |\n          test "$A" = one\n          echo second\n',
                 0,
             ),
             (
@@ -315,20 +392,75 @@ def self_test() -> int:
                 EXIT_UNTRUSTED,
             ),
             (
+                "continue-on-error is refused",
+                head + "      - name: soft\n        continue-on-error: true\n"
+                "        run: exit 1\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a shell other than bash is refused",
+                head + "      - name: sh\n        shell: sh\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a workflow-level default shell other than bash is refused",
+                "on: push\ndefaults:\n  run:\n    shell: pwsh\njobs:\n  gate:\n"
+                "    runs-on: x\n    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a missing working-directory is refused, not a traceback",
+                head + "      - name: wd\n        working-directory: nope/here\n"
+                "        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "an existing working-directory is honoured",
+                head + "      - name: wd\n        working-directory: sub\n"
+                '        run: test "$(basename "$PWD")" = sub\n',
+                0,
+            ),
+            (
                 "zero run steps is refused",
                 head + "      - uses: actions/checkout@v6\n",
                 EXIT_UNTRUSTED,
             ),
             (
                 "unknown job is refused",
-                "  other:\n    runs-on: x\n    steps:\n"
+                "on: push\njobs:\n  other:\n    runs-on: x\n    steps:\n"
                 "      - name: a\n        run: echo a\n",
                 EXIT_UNTRUSTED,
             ),
             (
-                "pipefail is on, like GitHub",
+                "the default shell has NO pipefail, like GitHub",
                 head + "      - name: pipe\n        run: false | cat\n",
+                0,
+            ),
+            (
+                "an explicit shell: bash HAS pipefail, like GitHub",
+                head + "      - name: pipe\n        shell: bash\n"
+                "        run: false | cat\n",
                 1,
+            ),
+            (
+                "a job-level default shell: bash HAS pipefail",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    defaults:\n"
+                "      run:\n        shell: bash\n    steps:\n"
+                "      - name: pipe\n        run: false | cat\n",
+                1,
+            ),
+            (
+                # Quoted on purpose: a bare `false` is a YAML boolean,
+                # and str(False) is a command that does not exist (127),
+                # a fixture defect, not a tool defect. Measured.
+                "the default shell still stops on a failing command",
+                head + '      - name: e\n        run: "false"\n',
+                1,
+            ),
+            (
+                "a non-string run scalar does not crash the replay",
+                head + "      - name: num\n        run: 123\n",
+                127,
             ),
         ]
         failed = 0
@@ -379,7 +511,7 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         return self_test()
     if args.list:
-        doc: Any = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+        doc = load_workflow(workflow)
         for job, spec in doc["jobs"].items():
             steps = spec.get("steps", [])
             runs = sum(1 for s in steps if "run" in s)
