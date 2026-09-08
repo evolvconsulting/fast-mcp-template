@@ -269,6 +269,13 @@ def replay(
 
     try:
         base_env = dict(os.environ)
+        # A GitHub runner carries no VIRTUAL_ENV. When this tool is
+        # launched through `uv run`, uv exports one for THIS project,
+        # and each `uv run` inside a replayed step then warns that it
+        # does not match the target root and ignores it. Measured on
+        # a --root replay of another repository. Dropped, so a step
+        # sees the environment CI gives it.
+        base_env.pop("VIRTUAL_ENV", None)
         for key, value in (spec.get("env") or {}).items():
             base_env[key] = resolve(str(value), resolvers)
     except LookupError as exc:
@@ -462,15 +469,31 @@ def self_test() -> int:
                 head + "      - name: num\n        run: 123\n",
                 127,
             ),
+            (
+                "the parent's VIRTUAL_ENV does not reach a step",
+                head + '      - name: venv\n        run: test -z "${VIRTUAL_ENV:-}"\n',
+                0,
+            ),
         ]
         failed = 0
-        for label, jobs, expected in cases:
-            write(jobs)
-            got = replay(wf, "gate", root=root, resolvers=fake, tail=5)
-            ok = got == expected
-            mark = "ok  " if ok else "FAIL"
-            print(f"{mark} {label}: expected {expected}, got {got}")
-            failed += 0 if ok else 1
+        # The VIRTUAL_ENV case is vacuous unless the parent carries
+        # one, so the whole battery runs with one set; no other case
+        # depends on its absence.
+        saved = os.environ.get("VIRTUAL_ENV")
+        os.environ["VIRTUAL_ENV"] = str(root / "not-a-venv")
+        try:
+            for label, jobs, expected in cases:
+                write(jobs)
+                got = replay(wf, "gate", root=root, resolvers=fake, tail=5)
+                ok = got == expected
+                mark = "ok  " if ok else "FAIL"
+                print(f"{mark} {label}: expected {expected}, got {got}")
+                failed += 0 if ok else 1
+        finally:
+            if saved is None:
+                os.environ.pop("VIRTUAL_ENV", None)
+            else:
+                os.environ["VIRTUAL_ENV"] = saved
         # The real resolver must refuse, not guess, when origin/HEAD is
         # unset: a temp dir is not a repository.
         try:
