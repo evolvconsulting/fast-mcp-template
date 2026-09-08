@@ -4,17 +4,18 @@
 After an edit it also says which ones moved.
 
 **Why this exists, and why now.** Three citations to `DESIGN.md` have
-been found pointing at the wrong lines, none of them by a gate. The line
-numbers below are the ones in the object frozen at `135c3ac`, where the
-defects were found. A record of where a defect WAS does not move, so
-each carries the marker:
+been found pointing at the wrong lines, none of them by a gate. They
+were found in the SOURCE project this template was extracted from, and
+their addresses are deliberately NOT reproduced here: this project's
+`docs/DESIGN.md` is a placeholder, so each would be a citation into a
+document that has no such line. What survives is the KIND of each
+failure, which is the part that is about citations rather than about
+that design:
 
-  - `DESIGN.md:603` cited a section that does not exist. ADR-0019.
-    REPOINT-EXEMPT
-  - `DESIGN.md:918-923` was contracted by one line. REPOINT-EXEMPT. It
-    dropped the `http` transport row §7.2 leans on - found by U1, in a
-    brief I wrote.
-  - Three separate citations of the three runtime pins pointed nine
+  - one cited a section that did not exist at all. ADR-0019.
+  - one had been contracted by a line, and so dropped the `http`
+    transport row §7.2 leans on - found by U1, in a brief I wrote.
+  - three separate citations of the three runtime pins pointed nine
     lines above them, at the prose paragraph about the resolve - found
     by U4.
 
@@ -42,10 +43,10 @@ WHAT THIS CAN AND CANNOT DO, stated plainly because the gap matters:
 THE `--since` MODE IS THE POINT. `docs/DESIGN.md`'s freeze SHA lives in
 `docs/DESIGN-FREEZE.txt` and is not retyped here - it was retyped
 once, the design moved at `86ab20e`, and every copy went on naming
-the old object.
-REPOINT-EXEMPT for the addresses above. That edit shifts an unknown
-number of the citations in this tree, and there are 841 of them (by this
-script, not by the grep I first reached for, which said 836). Run:
+the old object. That edit shifts an unknown number of the citations in
+the tree it is run against; in the source project there were 841 of
+them (by this script, not by the grep I first reached for, which said
+836). Run:
 
     python3 docs/reviews/check-design-citations.py \
         --since "$(cat docs/DESIGN-FREEZE.txt)"
@@ -113,14 +114,15 @@ def _tracked_files() -> list[pathlib.Path]:
 
 
 #: A line carrying this marker is an EXAMPLE of a citation, not a
-#: citation OF anything - the repoint tool and
-#: `check-design-citation-shape.py` both honour it, and this file's own
-#: docstring uses it. THIS CHECKER DID NOT, which is the asymmetry:
-#: `REVIEW-R10.md` quotes the deliberately-out-of-bounds citations its
-#: probe planted, as EVIDENCE, and one of those lines already carried
-#: the marker and was flagged anyway. A wired gate went red on a report
-#: describing the very defect the gate looks for - the sixth time in one
-#: day a checker has found the document that documents it.
+#: citation OF anything, and `check-design-citation-shape.py` honours
+#: the same one. THIS CHECKER DID NOT, which is the asymmetry: a review
+#: in the source project quoted the deliberately-out-of-bounds
+#: citations its own probe had planted, as EVIDENCE, and one of those
+#: lines already carried the marker and was flagged anyway. A wired
+#: gate went red on a report describing the very defect the gate looks
+#: for. That review is NOT carried here and is described rather than
+#: named: the template's docs/ holds no records, so naming it would be
+#: a pointer to a file nobody can open.
 EXEMPT_MARKER = repoint_exempt.MARKER
 #: CITATIONS skipped, not LINES. #142 changed the unit deliberately:
 #: the old line count reported 51 while 36 of those lines carried no
@@ -208,10 +210,13 @@ def _report_bounds(total_lines: int) -> int:
     # incremented - and READ NOWHERE. I wrote both the counter and the
     # claim, on the same day, and never ran the check it describes.
     #
-    # The review proved the consequence with a plant: a line reading
-    # `DESIGN.md:99999-99999 REPOINT-EXEMPT` passes THIS gate and the
-    # shape gate, both exit 0, nothing printed - a citation 97,866
-    # lines past the end of a 2133-line file.
+    # The review proved the consequence with a plant: ONE line carrying
+    # the marker and an address tens of thousands of lines past the end
+    # of the design passed THIS gate and the shape gate, both exit 0,
+    # nothing printed. The plant is described and not reproduced,
+    # because written out in citation shape it would be a live citation
+    # here, needing a register row of its own for a demonstration whose
+    # evidence this template does not carry.
     print(f"  citations exempt (marked AND registered): {EXEMPT_SKIPPED}")
     print(repoint_exempt.report())
     if bad:
