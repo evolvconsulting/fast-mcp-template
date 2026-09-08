@@ -1,0 +1,42 @@
+# THE REGISTER OF EXEMPTED DESIGN CITATIONS - the only thing that grants
+# an exemption. Three columns, TAB separated:
+#
+#     <tracked path>  <TAB>  <start>-<end>  <TAB>  <the reason>
+#
+# A citation is exempt from both carried citation checkers if AND ONLY
+# IF its line carries the REPOINT-EXEMPT marker AND the (path, address)
+# pair appears below with a non-blank reason. The marker alone grants
+# nothing: in the project this machinery came from, 36 lines that merely
+# NAMED the marker were silently exempt from two wired gates while
+# exempting nothing at all.
+#
+# THIS FILE IS `.txt` ON PURPOSE AND MUST NOT BECOME .py, .json, .md OR
+# .yaml. Every one of those suffixes IS scanned by a gate this register
+# feeds - check-design-citations.py reads .py .toml .md .yml .yaml .sh,
+# check-design-citation-shape.py reads .py .sh - so a register written
+# in any of them would be scanned by the gate it governs and would have
+# to exempt itself. That self-reference IS the defect this file closes.
+# `.txt` is in neither suffix set.
+#
+# THE KEY CARRIES NO LINE NUMBER. A path:line key rots on the first edit
+# above the line and then silently re-exempts whatever moved into the
+# slot. The address is normalised `<start>-<end>` even when the citation
+# is written as a single line, and one row therefore covers every marked
+# line in that file carrying that address.
+#
+# WHAT AN ADOPTER SHOULD EXPECT TO FIND HERE: very little, and nothing
+# about their own design. Both rows below exist because
+# check-design-citations.py has to SHOW the shape its own regex matches
+# - once in the comment sitting on the pattern, once as the input to its
+# `--controls` arm, where prose would test nothing. Neither is a
+# citation of anything, and the numbers are arbitrary. Everything else
+# the template carried was PROSED instead (defect D9), because a
+# template has no design to cite.
+#
+# ADDING A ROW IS THE POINT OF FRICTION. It is a visible diff in a file
+# whose whole contents are printed on every run of either checker. A
+# citation of YOUR design that cannot be defended in one sentence here
+# does not belong in the tree - repoint it instead.
+
+docs/reviews/check-design-citations.py	603-603	example data for the citation pattern - what it MATCHES, not a citation of anything. The single-line form, in the comment on _CITATION and in the `--controls` arm that proves the pattern reads both forms
+docs/reviews/check-design-citations.py	918-924	example data for the citation pattern - what it MATCHES, not a citation of anything. The range form, in the same two places as the row above
