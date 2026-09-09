@@ -139,10 +139,9 @@ PHASE_HELP = (
     "comma-separated pytest-cov phases to keep "
     "(setup,run,teardown). Empty = all. `run` alone excludes the "
     "fixture traffic that makes an autouse fixture look like "
-    "universal coverage: tests/conftest.py's autouse breaker reset "
-    "calls jobvite_client.reset_breaker(), so ALL 888 tests touch "
-    "that file in setup AND teardown through exactly 3 arcs of one "
-    "2-line helper."
+    "universal coverage: an autouse fixture in tests/conftest.py that "
+    "calls into a module makes EVERY test touch that module in setup "
+    "AND teardown, through a handful of arcs of one small helper."
 )
 
 

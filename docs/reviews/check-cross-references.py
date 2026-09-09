@@ -161,7 +161,7 @@ def unresolved(
     missing: list[tuple[int, str]] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         # A line that NAMES another document is citing that document's
-        # numbering. `Review and `JOBVITE-API.md` §0.2 cover that` is
+        # numbering. `Review and `OTHER-DOC.md` §0.2 cover that` is
         # correct and unresolvable here. Refining the checker to see
         # this took the second pass; the first reported eight such
         # references as defects.

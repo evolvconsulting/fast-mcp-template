@@ -93,7 +93,6 @@ STRUCTURAL = ("```", "|---", "---", "|--", ":--")
 
 #: Necessary, not sufficient, since #142: the marker selects the line
 #: and docs/reviews/REPOINT-EXEMPT.txt grants the citation.
-EXEMPT = repoint_exempt.MARKER
 
 
 def code_files() -> list[pathlib.Path]:

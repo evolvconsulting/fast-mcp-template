@@ -223,15 +223,18 @@ DECLARATION = re.compile(
 
 #: Rounds that reviewed a UNIT at a tree state and have no range to
 #: recover. **A blank reason is not an exemption** (R12-M5).
-UNDECLARED_BY_HISTORY: dict[str, str] = {
-    "REVIEW-CODE-R2.md": "reviewed U1/U3/U4 at a pinned SHA, not a range",
-    "REVIEW-R3.md": "reviewed 'the seven merged units', not a range",
-    "REVIEW-R4.md": "reviewed U5 at 555bad6, a tree state, not a range",
-    "REVIEW-R5.md": "reviewed U6 at d0abd10, a tree state, not a range",
-    "REVIEW-R6.md": "reviewed U7 at ec38835, a tree state, not a range",
-    "REVIEW-R7.md": "reviewed U8/U9/U12/U10 at bc0f958, a tree state",
-    "REVIEW-R8.md": "reviewed U14 at 2c6ff19, a tree state, not a range",
-}
+#:
+#: EMPTY HERE, AND THAT IS THE CORRECT VALUE rather than an omission.
+#: It arrived from the extraction holding seven rows naming
+#: fast-mcp-jobvite review documents - REVIEW-CODE-R2.md and
+#: REVIEW-R3.md through REVIEW-R8.md - none of which this repository
+#: has ever contained. Every key was dead: the lookup is by FILENAME
+#: against the population, so no row could ever be reached, and the
+#: SHAs inside the reasons resolve to nothing here either. A dead
+#: exemption is worse than none, because it reads as a considered
+#: decision about this repository. Add a row when a round here
+#: reviews a tree state rather than a range.
+UNDECLARED_BY_HISTORY: dict[str, str] = {}
 assert all(v.strip() for v in UNDECLARED_BY_HISTORY.values()), (
     "a blank reason is not an exemption"
 )

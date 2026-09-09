@@ -69,14 +69,14 @@ PACKAGE = ROOT / "src/fast_mcp_template"
 #: reflow between them cannot silently drop one. Each is required; a
 #: pattern that stops matching is a hard stop, never a skipped floor.
 #:
-#: `[^0-9]{0,40}` rather than `.*`: a greedy gap would let the "90% the
-#: Jobvite client" pattern match across the "95% on `utils/`" clause and
-#: read the wrong number, which is the shape of a wrong answer that
-#: explains itself.
+#: `[^0-9]{0,40}` rather than `.*`: a greedy gap would let one role's
+#: pattern match across the next clause and read the wrong number,
+#: which is the shape of a wrong answer that explains itself. Measured
+#: in the source project on its "90% the Jobvite client" against its
+#: "95% on `utils/`".
 DESIGN_FLOORS = {
     "overall": re.compile(r"(\d+)%\s*floor overall"),
     "tool modules": re.compile(r"(\d+)%[^0-9]{0,40}tool modules"),
-    "the Jobvite client": re.compile(r"(\d+)%[^0-9]{0,40}the Jobvite client"),
     "utils/": re.compile(r"(\d+)%[^0-9]{0,20}`utils/`"),
     "critical line": re.compile(r"(\d+)%\s*line with"),
     "critical branch": re.compile(r"(\d+)%\s*branch on\s*\n?critical paths"),
@@ -229,7 +229,11 @@ def main(argv: list[str] | None = None) -> int:
     # ---------------------------------------------------------------
     # THE JOIN. Both directions, because they are different defects.
     # ---------------------------------------------------------------
-    expected = design_role_set | {"the Jobvite client"}
+    # THE SOURCE PROJECT ADDED ONE ROLE HERE that its design named and
+    # this template's does not, so the expected set is exactly what the
+    # design declares. An adopter whose design names a role the
+    # DESIGN_FLOORS patterns cannot see adds it in both places.
+    expected = design_role_set
     unclaimed = expected - declared_role_set
     invented = declared_role_set - expected
     if duplicates:
@@ -269,9 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             line_floor, family = floors["tool modules"], "tool module"
         if "/utils/" in rel:
             line_floor, family = max(line_floor, floors["utils/"]), "utils/"
-        if role == "the Jobvite client":
-            line_floor, family = max(line_floor, floors["the Jobvite client"]), role
-        elif role is not None:
+        if role is not None:
             line_floor = max(line_floor, floors["critical line"])
             branch_floor = floors["critical branch"]
             family = role

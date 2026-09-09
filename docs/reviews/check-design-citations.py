@@ -126,7 +126,6 @@ def _tracked_files() -> list[pathlib.Path]:
 #: for. That review is NOT carried here and is described rather than
 #: named: the template's docs/ holds no records, so naming it would be
 #: a pointer to a file nobody can open.
-EXEMPT_MARKER = repoint_exempt.MARKER
 #: CITATIONS skipped, not LINES. #142 changed the unit deliberately:
 #: the old line count reported 51 while 36 of those lines carried no
 #: citation at all, so the number that was supposed to make the

@@ -915,9 +915,9 @@ def main() -> int:
             elif a.shape == "sed-bre":
                 # MULTILINE, not DOTALL: sed matches one line at a time,
                 # so `^` and `$` in these patterns mean line start and
-                # line end. Under the default flags `^JOBVITE_API_KEY=`
-                # would be tested against the start of the FILE and
-                # reported stale while the row is perfectly live.
+                # line end. Under the default flags `^API_KEY=` would
+                # be tested against the start of the FILE and reported
+                # stale while the row is perfectly live.
                 hits = len(re.findall(a.text, text, re.M))
             else:
                 hits = text.count(a.text)
