@@ -187,7 +187,29 @@ REVIEWS = ROOT / "docs" / "reviews"
 #: The commit from which review coverage is claimed. **A CONSTANT, never
 #: derived from the declarations** - see R12-H3. Moving it FORWARD hides
 #: commits, so it changes only with a recorded reason.
-CONTAINER_BASE = "8695101"
+#:
+#: THE RECORDED REASON, 2026-09-09. This read `8695101` until today, and
+#: that is a fast-mcp-jobvite commit this repository has never held:
+#: `git cat-file -t 8695101` answers "Not a valid object name". It was
+#: carried in by the extraction and NOTHING NOTICED FOR A WEEK, because
+#: until the first review stub landed the population was empty and the
+#: checker exited 2 at "MATCHED ZERO review documents" before the
+#: `rev-list` below ever read the base. An early refusal hides that the
+#: later stages never ran. D9's five stubs made the population real and
+#: the foreign base surfaced immediately, as `git rev-list
+#: 8695101..origin/main failed: fatal: ambiguous argument`, exit 3.
+#:
+#: WHY THE ROOT COMMIT AND NOT A LATER ONE. This file's own rule decides
+#: it: moving the base FORWARD hides commits. `7e9e44c` is the
+#: extraction itself, so there is no earlier commit to hide, and every
+#: commit this template has ever had is in the question. The first
+#: Gate-green commit instead would silently drop the commits between - a
+#: smaller backlog bought by asking a smaller question.
+#:
+#: `A..B` EXCLUDES `A`, so the root commit itself is never scored. That
+#: is inherent to the range and is stated rather than left to be
+#: rediscovered: coverage is claimed FROM the extraction, not OF it.
+CONTAINER_BASE = "7e9e44c"
 
 IS_REVIEW = re.compile(r"REVIEW.*-R\d+", re.IGNORECASE)
 NOT_A_COMMIT_REVIEW = re.compile(r"^PLAN-REVIEW|REVIEW$", re.IGNORECASE)
