@@ -60,7 +60,8 @@ job with `container:` or `services:`, because a replay on this host
 would substitute its own toolchain for the declared image and start
 no service; a job with `strategy:`, because a single replay is one
 cell of the matrix and would call the rest covered; an `env:` or
-`run:` value that is a list or a mapping; an unknown job; a job whose
+`run:` value that is a list or a mapping; a job that calls a reusable
+workflow (`uses:` at the job level); an unknown job; a job whose
 `steps:` is empty or null; and a job that would replay ZERO run steps.
 A replay that silently skipped or
 softened a step would be a green that tested nothing, which is the
@@ -73,6 +74,13 @@ which only makes a local replay more patient than CI; it cannot
 manufacture a pass. `needs:` and `outputs:` between jobs are not
 modelled: one job is replayed at a time, and an expression that reads
 another job's output is refused as unresolvable rather than guessed.
+The runner's four files are real, so a step that appends to one does
+not crash: `$GITHUB_ENV` (`NAME=value` and `NAME<<DELIM` forms) and
+`$GITHUB_PATH` (one directory per line, prepended) are applied to the
+following steps as the runner applies them; `$GITHUB_OUTPUT` and
+`$GITHUB_STEP_SUMMARY` exist and are discarded, since outputs cross
+jobs and summaries reach nobody here. Round 5 measured a step writing
+`$GITHUB_ENV` failing with "No such file or directory": a false red.
 A SIGKILL of this process leaves the step's temporary script on disk
 and the step's process group running, because nothing can run after
 SIGKILL. On Ctrl-C the step runs in its own process group and the
@@ -101,6 +109,7 @@ import argparse
 import contextlib
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -252,6 +261,10 @@ def refusals(
             out.append(f"the job declares {key}:, which this host cannot honour")
     if "strategy" in spec:
         out.append("the job declares strategy:, which a one-cell replay cannot honour")
+    if "uses" in spec:
+        out.append(
+            "the job calls a reusable workflow (uses:), which this host cannot replay"
+        )
     for scope, block in (("workflow", doc.get("env")), ("job", spec.get("env"))):
         for key, value in (block or {}).items():
             if isinstance(value, (list, dict)):
@@ -343,6 +356,44 @@ def run_step(
     return rc, stdout + stderr, time.monotonic() - start
 
 
+def apply_github_env(path: Path, env: dict[str, str]) -> None:
+    """Apply what a step wrote to `$GITHUB_ENV`, then empty the file.
+
+    The runner's two forms: `NAME=value` on one line, and
+    `NAME<<DELIM` followed by the value's lines and a line holding
+    only DELIM. The file is emptied so the next step applies only
+    its own writes, as on the runner.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if not line.strip():
+            continue
+        head, sep, rest = line.partition("<<")
+        if sep and "=" not in head:
+            body: list[str] = []
+            while i < len(lines) and lines[i] != rest:
+                body.append(lines[i])
+                i += 1
+            i += 1
+            env[head.strip()] = "\n".join(body)
+            continue
+        name, eq, value = line.partition("=")
+        if eq:
+            env[name.strip()] = value
+    path.write_text("", encoding="utf-8")
+
+
+def apply_github_path(path: Path, env: dict[str, str]) -> None:
+    """Prepend what a step wrote to `$GITHUB_PATH`, then empty it."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            env["PATH"] = f"{line.strip()}{os.pathsep}{env.get('PATH', '')}"
+    path.write_text("", encoding="utf-8")
+
+
 def replay(
     workflow: Path,
     job: str,
@@ -387,11 +438,23 @@ def replay(
         print(f"REFUSED: {exc}")
         return EXIT_UNTRUSTED
 
-    # Steps may append to $GITHUB_OUTPUT; give them a real file, then
-    # remove it, so a replay leaves nothing behind.
-    fd, output_path = tempfile.mkstemp(suffix=".github-output")
-    os.close(fd)
-    base_env["GITHUB_OUTPUT"] = output_path
+    # The runner gives every step four files to append to. Give them
+    # real ones in a directory of their own, removed at the end so a
+    # replay leaves nothing behind; ENV and PATH are applied to the
+    # following steps, OUTPUT and STEP_SUMMARY are discarded.
+    runner_dir = Path(tempfile.mkdtemp(suffix=".github-runner"))
+    runner_files = {
+        name: runner_dir / name.lower()
+        for name in (
+            "GITHUB_OUTPUT",
+            "GITHUB_ENV",
+            "GITHUB_PATH",
+            "GITHUB_STEP_SUMMARY",
+        )
+    }
+    for name, file in runner_files.items():
+        file.write_text("", encoding="utf-8")
+        base_env[name] = str(file)
     steps = spec.get("steps") or []
     total = len(steps)
     worst = 0
@@ -419,6 +482,8 @@ def replay(
                 return EXIT_UNTRUSTED
             cwd = root / declared_workdir(doc, spec, step)
             rc, output, seconds = run_step(shell, script, env, cwd)
+            apply_github_env(runner_files["GITHUB_ENV"], base_env)
+            apply_github_path(runner_files["GITHUB_PATH"], base_env)
             replayed += 1
             print(f"STEP {i}/{total} {name}: rc={rc} ({seconds:.1f}s)")
             if verbose or rc != 0:
@@ -431,7 +496,7 @@ def replay(
                 if not keep_going:
                     break
     finally:
-        Path(output_path).unlink(missing_ok=True)
+        shutil.rmtree(runner_dir, ignore_errors=True)
     print(
         f"REPLAY {job}: {replayed} run-steps replayed, "
         f"{not_replayed} uses-steps not replayed, exit {worst}"
@@ -641,6 +706,41 @@ def self_test() -> int:
             (
                 "a null steps: is refused, not a traceback",
                 "on: push\njobs:\n  gate:\n    runs-on: x\n    steps:\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "GITHUB_ENV reaches the following step",
+                head + '      - name: w\n        run: echo "FOO=bar" >> "$GITHUB_ENV"\n'
+                '      - name: r\n        run: test "$FOO" = bar\n',
+                0,
+            ),
+            (
+                "a multi-line GITHUB_ENV value reaches the following step",
+                head + "      - name: w\n        run: |\n"
+                "          printf 'MSG<<EOF\\nline one\\nline two\\nEOF\\n'"
+                ' >> "$GITHUB_ENV"\n'
+                "      - name: r\n        run: |\n"
+                '          test "$MSG" = "$(printf \'line one\\nline two\')"\n',
+                0,
+            ),
+            (
+                "GITHUB_PATH prepends to the following step's PATH",
+                head
+                + '      - name: w\n        run: echo "$PWD/sub" >> "$GITHUB_PATH"\n'
+                "      - name: r\n        run: |\n"
+                '          case "$PATH" in "$PWD/sub":*) exit 0;; *) exit 1;; esac\n',
+                0,
+            ),
+            (
+                "a write to GITHUB_STEP_SUMMARY does not crash the step",
+                head
+                + '      - name: s\n        run: echo hi >> "$GITHUB_STEP_SUMMARY"\n',
+                0,
+            ),
+            (
+                "a job that calls a reusable workflow is refused",
+                "on: push\njobs:\n  gate:\n"
+                "    uses: org/repo/.github/workflows/x.yml@main\n",
                 EXIT_UNTRUSTED,
             ),
             (
