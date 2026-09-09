@@ -602,7 +602,7 @@ Schema `$id`: `https://gofastmcp.com/public/schemas/fastmcp.json/v1.json`. Top-l
 - `env` supports `${VAR_NAME}` interpolation from the process environment; *"Undefined variables remain as literal strings."*
 - Auto-detected: a file named exactly `fastmcp.json` in the cwd is picked up by `fastmcp run`, `fastmcp dev inspector`, and `fastmcp inspect`. CLI args override config values. `--skip-env` / `--skip-source` bypass preparation steps.
 
-**Absence, stated loudly:** there is **no `required: true` / "declare a required env var" feature** in `fastmcp.json`. `deployment.env` only *sets* values. Any "this server needs `JOBVITE_API_KEY`" contract must be enforced in our own settings layer (pydantic-settings with a required field is the right call), not in the manifest. The `env_vars` array in `fast-mcp-jira/mcp-server.json` is a bespoke invention that no FastMCP code reads.
+**Absence, stated loudly:** there is **no `required: true` / "declare a required env var" feature** in `fastmcp.json`. `deployment.env` only *sets* values. Any "this server needs `TODO_UPSTREAM_API_KEY`" contract must be enforced in our own settings layer (pydantic-settings with a required field is the right call), not in the manifest. The `env_vars` array in `fast-mcp-jira/mcp-server.json` is a bespoke invention that no FastMCP code reads.
 
 ### CLI (`fastmcp --help` `[FROM SOURCE]`)
 
@@ -837,7 +837,7 @@ So: **`server.json` is the declaration to clients; pydantic-settings is the enfo
 
 **Publishable-repo checklist:**
 
-- `.env` in `.gitignore`; commit only `.env.example` with **empty or obviously-fake** values (`JOBVITE_API_KEY=`), never a redacted-looking real key.
+- `.env` in `.gitignore`; commit only `.env.example` with **empty or obviously-fake** values (`TODO_UPSTREAM_API_KEY=`), never a redacted-looking real key.
 - No secret defaults in `config.py` — required secrets are required fields, so startup fails loudly rather than running unauthenticated.
 - `fastmcp.json` `deployment.env` uses `${VAR}` indirection only. Never a literal secret; the file is public.
 - `server.json` (if/when we register) marks every credential `"isSecret": true, "isRequired": true`.
