@@ -201,6 +201,45 @@ def cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
+def _need(text: str, needle: str, what: str, start: int = 0) -> int:
+    """The offset of `needle` at or after `start`, or a NAMED REFUSAL.
+
+    THE REFUSAL LIVES HERE SO THERE IS ONE OF IT. `slice_section` grew
+    this refusal first, for the two section headings it takes as
+    arguments, and left SEVEN bare `str.index` calls further down the
+    file to raise `ValueError: substring not found` on a design that
+    carries the four sections but not one of their sub-headings. Its
+    docstring reported that shape rather than fixing it, on the
+    argument that those calls were unreachable behind the first
+    refusal. Review round 2 of `chore/carried-machinery` disproved the
+    argument by building the reachable case: a design with a valid
+    STRIDE row whose closing section omits the exact phrase
+    `Must mitigate before implementation proceeds` raised an unhandled
+    `ValueError` at exit 1, which is this file's code for a real
+    coupling violation. Measured, not read.
+
+    That docstring also said FIVE. There are seven, counted
+    mechanically over code lines - a tenth textual match is inside a
+    comment describing an earlier fix, and counting that would have
+    made it eight. A number stated from memory is a claim like any
+    other.
+
+    `str.find` rather than `str.index`, so the refusal is the only way
+    out and there is no exception left to forget to catch.
+    """
+    i = text.find(needle, start)
+    if i < 0:
+        print(f"MISSING HEADING ({what}): {needle!r}")
+        print("This checker reads a design laid out in the sections it")
+        print("names. Against a design that does not carry them it can")
+        print("enforce nothing, and a traceback would say so in the exit")
+        print("code of a real coupling violation. Write the section, or")
+        print("retarget the headings at your own design's shape.")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 2.")
+        raise SystemExit(2)
+    return i
+
+
 def slice_section(text: str, start: str, end: str | None) -> str:
     """The text from `start` up to `end`, or a NAMED REFUSAL.
 
@@ -218,30 +257,19 @@ def slice_section(text: str, start: str, end: str | None) -> str:
     heading is NAMED so the reader knows which one to write, rather
     than being handed a stack.
 
-    **WHAT THIS DOES NOT GUARD, stated rather than left to be found.**
-    Five `str.index` calls further down slice INSIDE sections this
-    function has already returned, on sub-headings such as
-    `Required cases` and `Residual Risks`. They are unreachable on a
-    design that fails here first, which is every design this guard
-    refuses, so they are not the measured defect and are not touched.
-    A design that HAS the four sections but not one of those five
-    sub-headings would still raise. That is a real shape and it is
-    reported rather than fixed unmeasured.
+    THE SUB-HEADINGS ARE GUARDED TOO, now, through the same `_need`.
+    They were not, and the paragraph that used to sit here reported
+    that as an accepted limit. See `_need` for what disproved it.
+
+    THE END NEEDLE IS SOUGHT FROM THE START OFFSET, which the earlier
+    membership test could not express. `needle not in text` passes for
+    an `end` that occurs only BEFORE `start`, and the following
+    `text.index(end, i)` then raised anyway - the guard admitting a
+    case it did not cover. `_need(text, end, "end", i)` asks the one
+    question that matters.
     """
-    for needle, what in ((start, "start"), (end, "end")):
-        if needle is None:
-            continue
-        if needle not in text:
-            print(f"MISSING HEADING ({what}): {needle!r}")
-            print("This checker reads a design laid out in the sections it")
-            print("names. Against a design that does not carry them it can")
-            print("enforce nothing, and a traceback would say so in the exit")
-            print("code of a real coupling violation. Write the section, or")
-            print("retarget the headings at your own design's shape.")
-            print("This is a BROKEN INSTRUMENT, not a finding. Exit 2.")
-            raise SystemExit(2)
-    i = text.index(start)
-    j = text.index(end, i) if end else len(text)
+    i = _need(text, start, "start")
+    j = _need(text, end, "end", i) if end else len(text)
     return text[i:j]
 
 
@@ -310,7 +338,7 @@ def main(path: pathlib.Path) -> int:
             )
 
     # required-case bullets in section 8
-    s8_required = s8[s8.index("Required cases") :]
+    s8_required = s8[_need(s8, "Required cases", "section 8 sub-heading") :]
 
     haystack = re.sub(r"\s+", " ", s8_required)
 
@@ -637,9 +665,15 @@ def main(path: pathlib.Path) -> int:
             )
 
     # 4. unmitigated Critical/High must be disposed of
-    must = closing[closing.index("Must mitigate before implementation proceeds") :]
-    must = must[: must.index("\n\n**", must.index("| Row |"))]
-    residual = closing[closing.index("### Residual Risks") :]
+    must_at = _need(
+        closing, "Must mitigate before implementation proceeds", "closing sub-heading"
+    )
+    must = closing[must_at:]
+    must = must[
+        : _need(must, "\n\n**", "end of the must-mitigate table",
+                _need(must, "| Row |", "must-mitigate table header"))
+    ]
+    residual = closing[_need(closing, "### Residual Risks", "closing sub-heading") :]
     for rid in sorted(unmitigated):
         if rid not in must and rid not in residual:
             failures.append(
@@ -655,8 +689,13 @@ def main(path: pathlib.Path) -> int:
             )
 
     # 6. the "already mitigated" roster matches the tables exactly
-    roster_start = closing.index("**Already mitigated at Critical or High**")
-    roster = closing[roster_start : closing.index("### Residual Risks", roster_start)]
+    roster_start = _need(
+        closing, "**Already mitigated at Critical or High**", "closing sub-heading"
+    )
+    roster = closing[
+        roster_start : _need(closing, "### Residual Risks", "closing sub-heading",
+                             roster_start)
+    ]
     claimed = set(REF_RE.findall(roster))
     if claimed != mitigated:
         for extra in sorted(claimed - mitigated):

@@ -96,18 +96,68 @@ _SEARCH_SUFFIXES = {".py", ".toml", ".md", ".yml", ".yaml", ".sh"}
 _SKIP_PARTS = {".git", ".venv", "venv", "__pycache__", ".ruff_cache", ".pytest_cache"}
 
 
+class GitUnavailableError(RuntimeError):
+    """`git` did not answer. A BROKEN INSTRUMENT, not a finding."""
+
+
+def _git(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+    """Run git, and name the case where git is not there to run.
+
+    THE GUARD IS HERE BECAUSE THIS IS WHERE GIT IS RUN. An earlier
+    version of this file guarded only the enumeration control's call
+    site, against `CalledProcessError`. That is the wrong exception
+    and the wrong place, both measured: with a PATH holding python3
+    but no git, the exec fails before any exit code exists, so
+    Python raises FileNotFoundError rather than CalledProcessError,
+    and all THREE arms - the bounds scan, `--since` and `--controls`
+    - died with a bare traceback at exit 1. Exit 1 is this checker's
+    code for a citation that does not resolve, so a missing git was
+    wearing a finding's exit code in every mode.
+
+    Probing for git in `main` instead would test a PROXY: `git
+    --version` can succeed while the calls below still fail. This
+    wrapper converts the real failure at the real call, and covers
+    any git call added to this file later without being remembered.
+
+    MEASURING IT HAS ITS OWN TRAP, and it cost a run: a probe that
+    empties PATH entirely measures the shell failing to find
+    python3, exit 127, and never reaches this file at all. Symlink
+    an interpreter into the probe PATH and remove only git.
+
+    BOTH FAILURE MODES ARE ONE CASE HERE, and separating them was
+    this fix's own first mistake. Converting only FileNotFoundError
+    left the adjacent column intact: with a `git` on PATH that runs
+    and exits 128 - no repository, a corrupt index - the scan arm
+    still died with a bare CalledProcessError traceback at exit 1,
+    and `--controls` printed `3/5 controls fired` at exit 1, which
+    reads as two controls having answered and failed rather than as
+    an instrument that could not run. Measured with a shim, not
+    argued. Neither mode yields a file list, so neither is a
+    finding, and both refuse in `main` at exit 3.
+    """
+    try:
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            check=check,
+        )
+    except FileNotFoundError as exc:
+        raise GitUnavailableError(f"git is not on PATH: {exc}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise GitUnavailableError(
+            f"git {' '.join(args)} exited {exc.returncode}: "
+            f"{(exc.stderr or '').strip() or 'no stderr'}"
+        ) from exc
+
+
 def _tracked_files() -> list[pathlib.Path]:
     """Every tracked file worth scanning.
 
     `git ls-files` is the authority.
     """
-    out = subprocess.run(
-        ["git", "ls-files", "-z"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=True,
-    ).stdout
+    out = _git(["ls-files", "-z"], check=True).stdout
     files = []
     for name in out.split("\0"):
         if not name:
@@ -246,7 +296,7 @@ def _report_bounds(total_lines: int) -> int:
     return 0
 
 
-def _report_moves(sha: str) -> int:
+def _report_moves(sha: str, new: str) -> int:
     # `check=True` USED TO RAISE HERE, and the traceback it produced
     # cost three CI rounds to read. On a SHALLOW checkout the blob is
     # simply absent, `git show` exits 128, and CalledProcessError
@@ -256,13 +306,7 @@ def _report_moves(sha: str) -> int:
     # A MISSING OBJECT IS A BROKEN INSTRUMENT, NOT A FINDING, and the
     # two must not share an exit code. `check-design-freeze.py` already
     # says this for the same cause; here is its sibling learning it.
-    done = subprocess.run(
-        ["git", "show", f"{sha}:docs/DESIGN.md"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=False,
-    )
+    done = _git(["show", f"{sha}:docs/DESIGN.md"], check=False)
     if done.returncode != 0:
         detail = done.stderr.strip()
         print(f"git show {sha}:docs/DESIGN.md failed: {detail}")
@@ -312,7 +356,6 @@ def _report_moves(sha: str) -> int:
     if not found:
         print(EMPTY_CORPUS)
         return 1
-    new = DESIGN.read_text()
     if old == new:
         print(f"DESIGN.md is byte-identical to {sha}. No citation can have moved.")
         return 0
@@ -346,10 +389,19 @@ def _report_moves(sha: str) -> int:
     return 1 if (moved or broken) else 0
 
 
-def controls() -> int:
-    """Prove each check can go red, on real content."""
+def controls(text: str) -> int:
+    """Prove each check can go red, on real content.
+
+    The DESIGN text is an ARGUMENT because it is read once, in `main`,
+    where a missing or unreadable file becomes a refusal at exit 3. It
+    was read again here and a third time in `_report_moves`, so the
+    guard `main` grew covered one of the three reads and the other two
+    kept their own bare traceback. Two guards written separately are
+    two guards that drift; one read that cannot be reached unguarded
+    cannot. The sibling `check-design-citation-shape.py` already takes
+    its corpus this way, so this is the shape that file settled on.
+    """
     fired = total = 0
-    text = DESIGN.read_text()
 
     total += 1
     mapping = line_map(text, "inserted\n" + text)
@@ -404,34 +456,53 @@ def controls() -> int:
     # ITS REACH, STATED HONESTLY: `.py`, `.md` and `.toml` are pinned by
     # this checker's own path, DESIGN and PYPROJECT. Dropping `.yml`,
     # `.yaml` or `.sh` from the suffixes is still invisible here,
-    # because
-    # no constant names a member of those kinds. Name one and this arm
-    # covers it.
+    # because no constant names a member of those kinds. Name one and
+    # this arm covers it.
+    #
+    # AND IT BOUNDS NOTHING. It proves the enumeration RUNS and REACHES
+    # THREE NAMED MEMBERS. It does not prove the corpus is any
+    # particular size, and a mutation that removes files none of the
+    # three live in is invisible to it. MEASURED HERE: adding the seven
+    # tracked directories that hold no named member (`scripts`, `src`,
+    # `tests`, `adr`, `research`, `briefs`, `workflows`) to
+    # `_SKIP_PARTS` took the corpus from 84 files to 56, a third of it
+    # gone, while this arm still printed FIRED and `--controls` still
+    # exited 0 at 5/5. On fast-mcp-jobvite the same mutation is far
+    # louder, 557 files to 347 and 2101 citations to 1561; here the
+    # citation figure cannot show it at all, because this template's
+    # corpus holds ZERO citations either way, so the file count is the
+    # only figure that moves.
+    #
+    # NO FLOOR IS ADDED, DELIBERATELY. A minimum-size assertion would
+    # be a number nobody can maintain: it goes stale on every file
+    # added or removed, and a floor set low enough not to go stale
+    # proves less than these three names already do. The honest fix is
+    # to name another member, not to guess a size. This comment is the
+    # boundary, written down rather than papered over.
     total += 1
     here = pathlib.Path(__file__).resolve()
     required = {"this checker": here, "DESIGN.md": DESIGN, "pyproject.toml": PYPROJECT}
-    try:
-        tracked = _tracked_files()
-    except subprocess.CalledProcessError as exc:
-        # `git ls-files` runs with check=True, so a broken git raised
-        # CalledProcessError straight out of this arm at exit 1 - the
-        # code
-        # this checker uses for a citation that does not resolve. A
-        # control that cannot run says so.
+    # NO LOCAL `except` FOR A BROKEN GIT. There was one, catching
+    # CalledProcessError and printing DID NOT FIRE. It is deliberately
+    # gone: `_git` now converts every git failure to
+    # GitUnavailableError, which `main` refuses at exit 3, so the
+    # clause was unreachable -
+    # dead code wearing the appearance of a live guard. It was also
+    # answering the wrong question. A controls run whose enumeration
+    # cannot run has not measured four arms out of five; it has
+    # measured nothing about the corpus, and `3/5 controls fired` at
+    # exit 1 invites a reader to hunt two failing controls that do not
+    # exist. Refusing whole is the honest verdict.
+    tracked = _tracked_files()
+    absent = sorted(n for n, p in required.items() if p not in tracked)
+    if tracked and not absent:
+        fired += 1
+        print(f"  CONTROL the corpus is enumerated ({len(tracked)} files) -> FIRED")
+    else:
         print(
             f"  CONTROL the corpus is enumerated -> DID NOT FIRE "
-            f"(git ls-files failed: {exc})"
+            f"({len(tracked)} file(s), MISSING: {', '.join(absent) or 'none'})"
         )
-    else:
-        absent = sorted(n for n, p in required.items() if p not in tracked)
-        if tracked and not absent:
-            fired += 1
-            print(f"  CONTROL the corpus is enumerated ({len(tracked)} files) -> FIRED")
-        else:
-            print(
-                f"  CONTROL the corpus is enumerated -> DID NOT FIRE "
-                f"({len(tracked)} file(s), MISSING: {', '.join(absent) or 'none'})"
-            )
 
     # AND THE SECOND ARM, on the refusal itself. Ported from
     # fast-mcp-jobvite 0d6f930, and WHAT IT PROVES IS NOT THE SAME
@@ -477,7 +548,9 @@ def controls() -> int:
         try:
             with contextlib.redirect_stdout(buf):
                 bounds_rc = _report_bounds(len(text.splitlines()))
-                moves_rc = _report_moves(FREEZE.read_text(encoding="utf-8").strip())
+                moves_rc = _report_moves(
+                    FREEZE.read_text(encoding="utf-8").strip(), text
+                )
         finally:
             globals()["_tracked_files"] = real
         said = buf.getvalue().count(EMPTY_CORPUS)
@@ -540,24 +613,25 @@ def main(argv: list[str]) -> int:
     # anywhere. Measured on fast-mcp-jobvite's copy: a sibling tool
     # passing a sha positionally produced `--since --controls`, the
     # membership test matched the VALUE of `--since`, and the checker
-    # ran
-    # its own self-test instead of the scan it was asked for and
-    # reported
-    # that as the answer. Reading argv[0] cannot do that.
+    # ran its own self-test instead of the scan it was asked for and
+    # reported that as the answer. Reading argv[0] cannot do that.
     mode = argv[0] if argv else ""
 
     # AND THE DESIGN IS READ ONCE, HERE, GUARDED. `docs/DESIGN.md` is a
-    # precondition of every path in this file and was read unguarded at
-    # three sites: `_report_moves`, `controls` and the bounds call
-    # below.
-    # With the file moved aside every arm died with a bare
+    # precondition of every path in this file and was read unguarded
+    # at three sites: `_report_moves`, `controls` and the bounds call
+    # below. With the file moved aside every arm died with a bare
     # FileNotFoundError at exit 1, which is this checker's code for a
-    # citation that does not resolve. It is caught HERE because this is
-    # the single entry point: the module is not importable under its
-    # hyphenated name and `__main__` below is its only caller, both read
-    # rather than assumed. `except OSError` rather than a
+    # citation that does not resolve. It is caught HERE because this
+    # is the single entry point: the module is not importable under its
+    # hyphenated name and `__main__` below is its only caller, both
+    # read rather than assumed. `except OSError` rather than an
     # `.exists()` test, so a file that is PRESENT but unreadable - mode
     # 000, a directory in its place - is caught by the same guard.
+    #
+    # IT IS ALSO THE ONLY READ NOW. `controls` and `_report_moves` take
+    # this text as an argument rather than reading it again, so there
+    # is no second read for this guard to miss.
     try:
         design_text = DESIGN.read_text()
     except OSError as exc:
@@ -575,14 +649,25 @@ def main(argv: list[str]) -> int:
 
     try:
         if mode == "--controls":
-            return controls()
+            return controls(design_text)
         if mode == "--since":
             if len(argv) < 2:
                 print("REFUSED: --since needs a sha, and none was given.")
                 print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
                 return 3
-            return _report_moves(argv[1])
+            return _report_moves(argv[1], design_text)
         return _report_bounds(len(design_text.splitlines()))
+    except GitUnavailableError as exc:
+        # Not caught by the enumeration arm's `except
+        # subprocess.CalledProcessError` one function up, deliberately:
+        # a `--controls` run without git must refuse WHOLLY at exit 3,
+        # not report 4/5 as though four arms had answered a question.
+        if mode == "--controls":
+            print(f"REFUSED: git could not be run, so no control can run: {exc}")
+        else:
+            print(f"REFUSED: git could not be run, so nothing was scanned: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
     except repoint_exempt.RegisterError as exc:
         print(f"BROKEN REGISTER: {exc}")
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
