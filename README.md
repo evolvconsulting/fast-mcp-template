@@ -131,6 +131,64 @@ the subject measured 7.45% coverage and 158 mypy errors. Both are now
 baselines you record on day one and may not regress. That is the difference
 between a gate that works from day one at 7% and one that gets switched off.
 
+**Carried machinery is not trusted machinery until it has run to a
+verdict HERE.** Everything under `docs/reviews/` and `scripts/` arrived from
+another repository. A checker that refuses early looks exactly like a checker
+that is fine: it prints a reason, exits non-zero, and nobody asks what the
+stages *after* the refusal would have said. Two carried files were found this
+way on this template a week after extraction, and neither was found by reading.
+
+- **Run each one past its first refusal, once, to a verdict.** Plant the
+  smallest input that gets it there - one stub file, one recorded row, one
+  declaration - read what it then says, and restore. `check-review-coverage.py`
+  refused at an empty population on every run since extraction; the first
+  review stub landed, the population became real, and the very next stage died
+  on a commit SHA belonging to the project this template came from.
+- **List every constant in a carried file that names a commit, a path, a
+  project or a count, and ask whether it belongs to YOU.** Grepping the old
+  project's name is not enough and will feel like it is.
+  `scripts/check-harness-anchors.py` carried a regex example naming the source
+  project's API key, which that grep does find; the same sweep also turned up a
+  foreign commit, foreign design-section headings, foreign harness filenames and
+  a foreign module inside an otherwise-renamed path, none of which it finds.
+- **Sweep every tracked file, not every tracked file with an extension you
+  thought of.** `git ls-files -z | xargs -0 grep -l -i <old project>`, with NO
+  suffix filter. A sweep written as `--include='*.py' --include='*.md'` and so
+  on cannot see a file with no extension at all, and the files with no
+  extension are the ones that carry a project's IDENTITY: `NOTICE`, `LICENSE`,
+  `CODEOWNERS`, `Dockerfile`, `Makefile`. Measured here: a suffix-globbed sweep
+  reported the tree clean while `NOTICE` still named the source project and
+  disclaimed affiliation with a company this template has nothing to do with.
+  Read those files by name, whatever any sweep says.
+- **A checker with subcommands needs each arm run.** One here reaches a clean
+  verdict with no arguments and dies on a foreign constant under `--self-test`.
+- **Fixing one refusal can uncover a wrong answer, not just an unrun stage.**
+  Emptying one carried dictionary here stopped a checker refusing on a missing
+  file and revealed that its next arm had been reporting a setting as "read
+  now" that this project has never had.
+- **Run the sweep in a scratch worktree, never in a tree holding uncommitted
+  work.** Some carried machinery WRITES: three members here rewrite a file and
+  restore it, and a control that restores by `git checkout --` cannot tell a
+  member's mutation from your own edits. Measured the hard way on this
+  template: a sweep of all 52 members silently reverted two uncommitted
+  paragraphs, and the commit that followed described them anyway.
+
+**Replaying the Gate locally.**
+
+```bash
+uv run --frozen python scripts/run-gate-locally.py
+```
+
+**The verdict is the tool's own `REPLAY` line**, not the exit code of whatever
+you wrapped around it: a wrapper's status and a `| tail` both look identical red
+or clean. It reads `ci.yml`'s own `run:` blocks rather than a second copy of
+them, and it REFUSES what it cannot faithfully reproduce instead of guessing.
+A failing step is printed IN FULL by default; `--tail N` trims it to the last N
+lines if you want that, and `--verbose` prints every step.
+If you replay a step by hand instead, run each block under `bash -e` and print
+one exit code per line, and pass `DEFAULT_BRANCH` in: the Gate gets it from the
+workflow context, so the step that reads it has nothing to read locally.
+
 **Expect real findings, and they are the point.** Ruff's wider selection
 surfaced 18 substantive issues in the subject's code that its own
 `select = ["E","F","I","W"]` could never see — missing `raise ... from`,
@@ -151,7 +209,24 @@ superseded run. `runs-on: ubuntu-latest` everywhere — a macOS runner bills at
 
 ## What is actually enforced today
 
-**Five gates are ENABLED.** They are the ones that hold on a project with no
+**Seven checkers are ENABLED**, and the table below is all seven. Two other
+numbers describe the same machinery and neither is this one, so all three are
+reconciled here rather than left to collide. **A Gate STEP is a `run:` block; a
+registry member is a FILE.** Counting `ci.yml`'s `gate` job and asking of each
+step whether its body names a tracked file under `docs/reviews/` or `scripts/`:
+
+- **18** `run:` steps in the job, of which
+- **12** invoke this repository's own machinery (the other six are `uv sync`,
+  `uv lock --check`, ruff, ruff format, mypy and pytest), and those 12 steps
+  invoke
+- **11** DISTINCT FILES, which is exactly what
+  `check-checkers-are-wired.py` reports as `WIRED`. Twelve steps run eleven
+  files because the registry runs TWICE, once as the census and once as
+  `--self-test`.
+
+Of those 11 files, **7** are the checkers in the table, **3** are controls
+scripts, and the last is `check-scripts-lib-survives-gitignore.sh` from the
+`.gitignore` note above. These seven are the ones that hold on a project with no
 code in it yet:
 
 | Gate | What it asserts |
@@ -164,9 +239,11 @@ code in it yet:
 | `check-coverage-ratchet.py` | coverage has not fallen below `docs/coverage-baseline.txt` |
 | `check-mypy-ratchet.py` | no mypy error that `docs/mypy-baseline.txt` does not already record |
 
-Each of the last three ships with a controls script that plants the failure
-and requires the checker to refuse it, and those controls run in Gate too — a
-gate nobody has watched fail is a gate nobody has tested.
+Four of them ship with a controls script that plants the failure and requires
+the checker to refuse it: the wiring checker's own `--self-test`, and one
+each for the design freeze, the default-branch trigger and the two ratchets
+together. All four run in Gate: a gate nobody has watched fail is a gate
+nobody has tested.
 
 `check-quickstart.py` **ships DISABLED.** It hardcodes `fastmcp inspect`,
 which takes a *file* and therefore cannot load a package using relative

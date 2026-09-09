@@ -87,12 +87,23 @@ def main(path: pathlib.Path, gate_path: pathlib.Path = GATE) -> int:
             [sys.executable, str(gate_path), str(tmp)], capture_output=True, text=True
         ).returncode
 
-    if gate(src) != 0:
+    baseline_rc = gate(src)
+    if baseline_rc != 0:
+        # WHICH ONE IT SAW, because the subject now has two non-zero
+        # answers and they mean opposite things. Exit 1 is a real
+        # coupling FINDING in the document; exit 2 is the subject
+        # REFUSING, because a heading it needs is absent. Both abort the
+        # sweep and both should, but "already red" told a reader to go
+        # fix a finding that may not exist. The distinction was
+        # introduced in check-coupling.py in the same change that gave
+        # it a named refusal.
+        saw = {1: "a FINDING (exit 1)", 2: "a REFUSAL (exit 2)"}.get(
+            baseline_rc, f"exit {baseline_rc}"
+        )
         print(
-            "ABORT: the unmutated document is already red. Fix that before sweeping "
-            "- every "
-            "mutation below would be reported as caught, and none of them would have "
-            "been."
+            f"ABORT: the unmutated document already returns {saw}. Fix that "
+            "before sweeping - every mutation below would be reported as "
+            "caught, and none of them would have been."
         )
         return 1
 

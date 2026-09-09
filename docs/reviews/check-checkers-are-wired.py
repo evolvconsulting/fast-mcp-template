@@ -267,25 +267,59 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     ),
     "check-brief-report-references.py": (
         "TURN ON when docs/briefs/ holds real briefs. It refuses a "
-        "brief that cites a report nobody committed; over the "
-        "PREAMBLE shape alone it would parse zero briefs, and a "
-        "checker over an empty population reports full coverage."
+        "brief that cites a report nobody committed. THE OLD REASON "
+        "SAID IT 'would parse zero briefs, and a checker over an "
+        "empty population reports full coverage'; MEASURED "
+        "2026-09-09 that is FALSE in both halves. It parses ONE "
+        "brief, PREAMBLE.md, and prints 'Briefs scanned: 1' at exit "
+        "0. The population is not empty and there is no empty-"
+        "population refusal to reach. What makes it vacuous here is "
+        "one level down: that brief cites ZERO reports, so there is "
+        "nothing for the check to resolve and a green says only that "
+        "nobody cited anything. Wire it when a brief in this "
+        "repository actually names a report."
     ),
     "check-brief-report-refs-controls.sh": (
         "the controls for the checker one row up; wire it in the "
         "same commit as its subject, never before."
     ),
     "check-committed-file-types.py": (
-        "TURN ON once `.file-type-allowlist` names the kinds this "
-        "project really commits. It refuses a committed file whose "
-        "extension is not on that list, which is the cheapest guard "
-        "against a stray artefact, a weights blob or a `.env` "
-        "reaching the remote."
+        "refuses a committed file whose extension is not in "
+        "ALLOWED_EXTENSIONS, the cheapest guard against a stray "
+        "artefact, a weights blob or a `.env` reaching the remote. "
+        "IT PASSES HERE ALREADY: `--all` reports '101 file(s) "
+        "checked, none refused.' at rc=0, measured 2026-09-09. "
+        "THE PRECONDITION IS ALLOWED_EXTENSIONS IN THIS FILE, 18 "
+        "entries and already populated, not `.file-type-allowlist`: "
+        "that file exists, holds 15 lines, and implements a "
+        "different rule, per-PATH exceptions such as "
+        "src/fast_mcp_template/py.typed. THIS ROW USED TO SAY 'TURN "
+        "ON once .file-type-allowlist names the kinds this project "
+        "really commits', which pointed an adopter at the wrong "
+        "artifact for a precondition already met. It is unwired "
+        "because an adopter should widen ALLOWED_EXTENSIONS to the "
+        "kinds their project commits before a refusal can gate a "
+        "push, not because it cannot run."
     ),
     "check-coupling.py": (
-        "TURN ON when DESIGN.md §3 states a real module layering. "
+        "TURN ON when DESIGN.md carries a section 11 threat model with a "
+        "STRIDE table and a section 8 test list. THE REASON THIS ROW USED "
+        "TO GIVE WAS FALSE IN BOTH HALVES, measured 2026-09-09: it said "
+        "'TURN ON when DESIGN.md section 3 states a real module layering. "
         "It enforces that layering against the code; against the "
-        "placeholder §3 it has nothing to enforce."
+        "placeholder section 3 it has nothing to enforce.' This checker "
+        "reads no section 3 - grep the file, there is no reference to one "
+        "- and it enforces nothing against the code. Its own docstring "
+        "says what it does: it checks section 11's threat model against "
+        "itself and against section 8, because that coupling claim was "
+        "hand-checked and wrong on three consecutive review rounds in the "
+        "source project. A reason that names the wrong section and the "
+        "wrong subject sends the next reader to write the wrong document. "
+        "AND 'NOTHING TO ENFORCE' WAS THE WORSE HALF: it reads as a quiet "
+        "no-op, and until this commit the checker died with an unhandled "
+        "ValueError at exit 1, the code this file uses for a real "
+        "violation. It now refuses by name at exit 2 and prints the "
+        "heading it wanted."
     ),
     "check-coupling-controls.py": (
         "the controls for check-coupling.py; wire it in the same commit as its subject."
@@ -385,7 +419,18 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "verdict machine-readable instead of prose."
     ),
     "check-harness-result-controls.sh": (
-        "the controls for the row above; wire it in the same commit as its subject."
+        "the controls for the row above; wire it in the same commit "
+        "as its subject. ONE OF ITS ELEVEN ROWS CANNOT RUN HERE, and "
+        "this reason did not say so until 2026-09-09: C10 mutates a "
+        "multi-line EXIT trap in "
+        "scripts/check-u1-boot-amputation.sh, a harness of the source "
+        "project that this template does not ship. It now prints NOT "
+        "RUN and names the path; before that guard `grep -c` on the "
+        "missing file left an empty string in an arithmetic test and "
+        "it printed 'line 227: [: : integer expression expected' "
+        "twice. The row is counted in TOTAL and not in FIRED, so the "
+        "tally reads 9/11 at exit 1 rather than claiming a pass it "
+        "did not earn."
     ),
     "check-harness-anchors.py": (
         "TURN ON with the first harness. It refuses a harness "
@@ -397,8 +442,21 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     ),
     "check-harness-anchors-controls.sh": (
         "the controls for the row above. It PLANTS a mutation in a "
-        "src/ module, so retarget its `target =` line at one of "
-        "yours before wiring it."
+        "src/ module, and 'retarget its `target =` line' UNDERSTATED "
+        "THAT until 2026-09-09: the module it names, "
+        "src/fast_mcp_template/audit.py, DOES NOT EXIST in this "
+        "repository. The package name was genericised at the "
+        "extraction and the module name was not. Five arms die on "
+        "FileNotFoundError and the harness reports rows=15 floor=15 "
+        "fired=1/15 status=breach. RETARGETING WAS MEASURED AND "
+        "REJECTED: the arms mutate one exact line, `return "
+        "ATTRIBUTION_UNAVAILABLE if self.transport is "
+        "Transport.STDIO else None`, and no module in this src/ "
+        "carries it or anything like it - the four here are 5, 14, "
+        "32 and 56 lines of placeholder. Pointing it at one of them "
+        "would make the setup step fail differently, not make the "
+        "arms fire. Retarget it at a real module of your own, with a "
+        "line worth mutating, when you have one."
     ),
     "check-landing-published.py": (
         "TURN ON with the first harness. It refuses a harness that "
@@ -414,7 +472,18 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "so it can only be honest looking FORWARD; wiring it before "
         "that baseline exists makes it red by construction. Wire it "
         "on the day you decide to hold the line from, and say which "
-        "day that is."
+        "day that is. AND ITS `--self-test` CANNOT RUN HERE, which "
+        "this reason did not say until 2026-09-09: POSITIVE_MERGE "
+        "and NEGATIVE_MERGE are two fast-mcp-jobvite merge commits, "
+        "and the arm dies with 'POSITIVE CONTROL ERROR: git rev-list "
+        "--parents -n 1 73dd717 failed rc=128: fatal: ambiguous "
+        "argument'. It is the same foreign-constant shape the "
+        "coverage checker carried, in a second file. It cannot be "
+        "fixed by editing a constant: this repository has no merge "
+        "with invented content to point the control at. Bare, with "
+        "no argument, the checker prints usage and exits 2, which "
+        "looks like an ordinary argument refusal and is why running "
+        "each member once hid this."
     ),
     "check-review-coverage.py": (
         "DELIBERATELY UNWIRED, reason carried intact. It reports "
@@ -448,11 +517,18 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "job's whole budget."
     ),
     "check-secrets-baseline.py": (
-        "TURN ON once `.secrets.baseline` is regenerated for THIS "
-        "project. The carried baseline is the previous project's "
-        "and would audit the wrong tree. Note the trap it was "
-        "written against: the scan hook REWRITES the baseline it "
-        "then fails on."
+        "TURN ON once `.secrets.baseline` is GENERATED for this "
+        "project. THE OLD REASON SAID 'the carried baseline is the "
+        "previous project's and would audit the wrong tree', which "
+        "reads as though a baseline is sitting here to be replaced. "
+        "MEASURED 2026-09-09: there is none. No `.secrets.baseline` "
+        "is tracked and none is on disk, and the checker says so and "
+        "exits 2, 'no baseline at <repo>/.secrets.baseline - nothing "
+        "to compare against'. The extraction dropped it rather than "
+        "carrying it, which is the safer of the two and the opposite "
+        "of what this row implied. Note the trap it was written "
+        "against, which still applies the day you make one: the scan "
+        "hook REWRITES the baseline it then fails on."
     ),
     "check-timeout-literals.py": (
         "TURN ON once timeouts live in one place. It refuses an "
@@ -476,7 +552,19 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     "check-row-floor-control.sh": (
         "the second control harness for the floor checkers; wire "
         "with its subject. Two files, two different arms - do not "
-        "delete one as a duplicate without reading both."
+        "delete one as a duplicate without reading both. AND IT "
+        "CANNOT RUN HERE AT ALL, which this reason did not say "
+        "until 2026-09-09: its subject is "
+        "scripts/check-u15-gate-amputation.sh, an amputation harness "
+        "of the project this machinery came from, and this template "
+        "ships none. It now refuses by name at exit 2. Before that "
+        "guard it reported 'ABORT: the anchor is not unique - "
+        "repoint it', which is FALSE - there is no file to hold an "
+        "anchor - and its EXIT trap then copied an EMPTY backup over "
+        "the missing path, leaving a 0-byte "
+        "scripts/check-u15-gate-amputation.sh untracked in the tree "
+        "on every run. Wire it when this project carries an "
+        "amputation harness with a row floor."
     ),
     "check-suite-floor.sh": (
         "TURN ON once the suite is large enough for a floor to mean "
@@ -487,7 +575,17 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     ),
     "check-suite-floor-amputation.sh": (
         "the amputation harness proving the suite-floor guard can "
-        "fail; wire it in the same commit as its subject."
+        "fail; wire it in the same commit as its subject. ON THIS "
+        "REPOSITORY IT REFUSES BEFORE IT AMPUTATES, and says so: its "
+        "subject test tests/test_suite_floor.py was never carried from "
+        "the source project, so it exits 2 with 'MISSING TESTS: "
+        "<path>'. Until that test exists there is nothing here for a "
+        "deleted branch to kill. MEASURED 2026-09-09, review round 4: "
+        "before the refusal was added every amputation reported "
+        "SURVIVED against 'no tests ran in 0.00s', and the run then "
+        "printed 'the harness did not restore the script' at exit 1 "
+        "while the script was byte for byte its backup - a harness "
+        "that measured nothing announcing a dirty tree that was clean."
     ),
     "check_advisories.py": (
         "TURN ON together with a `pip-audit` step. It emits "
@@ -528,6 +626,28 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "the library `coverage-test-map.py` feeds; same trigger. It "
         "is sourced by harnesses, not invoked by a CI step, so it "
         "becomes wired through its caller."
+    ),
+    "harness-state.sh": (
+        "the shell library that derives the run-state file's path "
+        "and format, so a harness killed by SIGKILL can be "
+        "recovered. Sourced by scripts/ci-harness-gate.sh, never "
+        "run by a step - it becomes wired when that gate is. IT "
+        "JOINS THIS CONTAINER, and the commit that carried it "
+        "claimed otherwise: the container is git ls-files over "
+        "docs/reviews and scripts, which is RECURSIVE, and "
+        "scripts/lib/harness-result.sh below is the standing proof. "
+        "That claim was measured while the file was still "
+        "UNTRACKED, so git ls-files could not see it and the count "
+        "read 52 instead of 53."
+    ),
+    "restore-stranded-mutation.sh": (
+        "the RECOVERY half of the state mechanism, carried from "
+        "fast-mcp-jobvite in the same commit as the library whose "
+        "own header names it. It reads a state file left by a "
+        "harness that died before restoring, and puts the mutation "
+        "back. TURN ON never as a gate step: it is a repair tool a "
+        "human runs after a kill, and a gate that repairs the tree "
+        "underneath a failing run destroys the evidence."
     ),
     "harness-result.sh": (
         "the shell library that PRINTS the canonical HARNESS-RESULT "

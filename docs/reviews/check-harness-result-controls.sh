@@ -219,6 +219,23 @@ fi
 # C10: the shape that is in the tree today.
 TOTAL=$((TOTAL + 1))
 c10_target_a="$c_scratch/scripts/check-u1-boot-amputation.sh"
+# THE SUBJECT MUST EXIST BEFORE THE MUTATION, AND THIS ROW SAYS SO BY
+# NAME. This template ships no amputation harnesses; the file below is
+# one of the source project's. Without this guard the row ran on a path
+# that is not there: `grep -c` printed its own error and set
+# `c10_before` to the EMPTY STRING, and the arithmetic test below then
+# printed "check-harness-result-controls.sh: line 227: [: : integer
+# expression expected" twice and fell through to the wrong branch.
+# MEASURED on this repository 2026-09-09. A missing subject is a row
+# that CANNOT RUN, which is different from a row that ran and did not
+# fire, so it is counted in TOTAL and not in FIRED and the tally below
+# reports the shortfall honestly.
+if [ ! -f "$c10_target_a" ]; then
+  echo "  NOT RUN  C10 needs $c10_target_a"
+  echo "           This repository ships no amputation harness, so there"
+  echo "           is no multi-line trap to drop an emitter from. Carry"
+  echo "           one, or repoint this row at a harness of your own."
+else
 c10_before=$(grep -c "trap 'harness_result_emit; cp" "$c10_target_a" || true)
 perl -0pi -e "s/trap 'harness_result_emit; cp/trap 'cp/" "$c10_target_a"
 c10_after=$(grep -c "trap 'harness_result_emit; cp" "$c10_target_a" || true)
@@ -236,6 +253,7 @@ else
   echo "         counters are matching raw lines again, so a continuation hides a"
   echo "         disarmed harness and disarmed looks exactly like passing."
 fi
+fi  # end of the C10 subject-exists guard
 
 # C11: the SIBLING SHAPE, latent - none in the tree. `trap Y EXIT INT TERM`
 # also REPLACES the sourced trap (measured: Y wins), and an `EXIT$` anchor can

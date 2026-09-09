@@ -1,0 +1,34 @@
+# REVIEW COVERAGE BACKLOG - the commits on this trunk that no review round covers.
+#
+# THIS IS A RATCHET, NOT A SCOREBOARD. check-review-coverage.py compares this
+# recorded SET against what it measures and fails on any difference in either
+# direction. It is not a demand for zero: on a trunk anyone is still committing
+# to, every merge adds commits no round has yet examined, and a gate that can
+# never be green gets switched off.
+#
+# WHY IT IS NOT ZERO, and this is the whole reason the file exists. These six
+# are the template's own construction: the extraction's follow-up commits and
+# the D9 stub commit. No review round was dispatched over a range that contains
+# them, and none can be invented now - deriving coverage from whatever SHA a
+# document happens to cite would manufacture coverage for code nobody read.
+# An absence you can see beats a false presence you cannot.
+#
+# 3fbf170 is the shape the checker's own docstring calls the N+1 lag: a commit
+# cannot record its own sha, so the commit that landed D9's five review stubs
+# could not be covered by them.
+#
+# MEASURED 2026-09-09 against origin/main = 1894b70, resolved and printed by the
+# checker itself; 25 trunk commits since 7e9e44c, 19 fully covered, 0 partial,
+# 6 covered by nothing, 3 with nothing in them to read. These lines are the
+# checker's own output pasted verbatim, not retyped: there is deliberately no
+# --write-backlog, because a gate that regenerates its own baseline certifies
+# whatever it just saw.
+#
+# FORMAT: <short sha> <NONE|PARTIAL> <commit subject, truncated>
+# The subject is compared as a prefix, so a truncation is not a mismatch.
+3fbf170 NONE docs: the review stubs for D9's five rounds, the last co
+515102d NONE Rewrite the build report against a real repository, and 
+5a95e07 NONE The default-branch control must run its subject the way 
+96e61c8 NONE Close the eight defects Phase 5 found by applying this t
+d57e2e4 NONE docs: close the last two adoption defects, D2 and D7
+e55c8fd NONE Freeze the design at the commit that carries it

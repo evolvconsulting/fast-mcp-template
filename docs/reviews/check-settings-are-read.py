@@ -60,19 +60,21 @@ CONFIG = ROOT / "src" / "fast_mcp_template" / "config.py"
 
 #: Fields that are deliberately not read by `src/`, each with the reason
 #: a reader needs. A bare name is refused: the reason IS the exemption.
-EXEMPT: dict[str, str] = {
-    "outbound_rate_limit": (
-        "ADR-0025 (ACCEPTED, applied): the self-throttle does not exist "
-        "yet. This entry records that it is KNOWN unread, not that it is "
-        "fine. WHOEVER GIVES IT ITS FIRST READER: the STALE EXEMPTION arm "
-        "below fires on you, and that is deliberate - read DESIGN.md "
-        "§4.4's throttle rules FIRST. They are written to constrain the "
-        "implementer and say in bold that the throttle is not built: it "
-        "is PER-PROCESS, and time spent waiting on it SPENDS §4.3's "
-        "outbound budget. Drop this entry in the same commit that "
-        "implements them, not before."
-    ),
-}
+#:
+#: EMPTY HERE, AND IT WAS NOT UNTIL THIS COMMIT. It carried one row for
+#: `outbound_rate_limit`, citing the source project's ADR-0025 and its
+#: DESIGN.md §4.4. This template has neither: `docs/adr/` holds only
+#: `0000-template.md`, and `Settings` has no such field. So the row
+#: could never match `unread`, and the STALE EXEMPTION arm below
+#: reported it as "is read now; drop its EXEMPT entry" - which is the
+#: opposite of true, the field does not exist at all.
+#:
+#: THAT MESSAGE WAS INVISIBLE UNTIL THE SAME COMMIT EMPTIED
+#: `UNIMPLEMENTED_MARKER`. The marker arm refused first, on a missing
+#: `server.json`, and returned before this arm was ever reported. One
+#: early refusal was hiding a wrong answer from a later stage, in the
+#: file next to the one where the same shape hid a foreign commit.
+EXEMPT: dict[str, str] = {}
 
 #: **THE OPERATOR-FACING HALF, AND IT IS SYMMETRIC** (R11-M2). An
 #: exemption above is a note between maintainers; `README.md` and
@@ -116,13 +118,13 @@ EXEMPT: dict[str, str] = {
 #: names in its own docstring; if a fourth operator-facing artefact ever
 #: appears, it must be added HERE TOO, and nothing but review enforces
 #: that.
-UNIMPLEMENTED_MARKER: dict[str, tuple[str, str, tuple[str, ...]]] = {
-    "outbound_rate_limit": (
-        "JOBVITE_OUTBOUND_RATE_LIMIT",
-        "NOT YET IMPLEMENTED",
-        ("README.md", ".env.example", "server.json"),
-    ),
-}
+#:
+#: EMPTY HERE. Its one row named `outbound_rate_limit` and
+#: `JOBVITE_OUTBOUND_RATE_LIMIT`, a setting of the source project that
+#: this template's `Settings` does not have, so the row could never
+#: match. Add a row when a setting here is declared and documented
+#: before it is implemented.
+UNIMPLEMENTED_MARKER: dict[str, tuple[str, str, tuple[str, ...]]] = {}
 
 
 def marker_lines(variable: str, marker: str, name: str) -> list[int]:

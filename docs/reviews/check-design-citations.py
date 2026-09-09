@@ -67,16 +67,25 @@ Exit 0 when every citation resolves, 1 otherwise. No dependencies.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
+import io
 import pathlib
 import re
 import subprocess
 import sys
+import traceback
 
 import repoint_exempt
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DESIGN = REPO_ROOT / "docs" / "DESIGN.md"
+FREEZE = REPO_ROOT / "docs" / "DESIGN-FREEZE.txt"
+#: NAMED SO THE ENUMERATION CONTROL CAN ASSERT A `.toml` MEMBER.
+#: The control below pins one file per suffix it can name; without a
+#: constant of this kind it could only assert a COUNT, and a count
+#: shrinks with the very declaration a suffix mutation narrows.
+PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 # Examples, REPOINT-EXEMPT: `DESIGN.md:603`, `DESIGN.md:918-924` - these
 # are what the pattern MATCHES, not citations of anything, so they must
@@ -88,18 +97,87 @@ _SEARCH_SUFFIXES = {".py", ".toml", ".md", ".yml", ".yaml", ".sh"}
 _SKIP_PARTS = {".git", ".venv", "venv", "__pycache__", ".ruff_cache", ".pytest_cache"}
 
 
+class GitUnavailableError(RuntimeError):
+    """`git` did not answer. A BROKEN INSTRUMENT, not a finding."""
+
+
+def _git(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+    """Run git, and name the case where git is not there to run.
+
+    THE GUARD IS HERE BECAUSE THIS IS WHERE GIT IS RUN. An earlier
+    version of this file guarded only the enumeration control's call
+    site, against `CalledProcessError`. That is the wrong exception
+    and the wrong place, both measured: with a PATH holding python3
+    but no git, the exec fails before any exit code exists, so
+    Python raises FileNotFoundError rather than CalledProcessError,
+    and all THREE arms - the bounds scan, `--since` and `--controls`
+    - died with a bare traceback at exit 1. Exit 1 is this checker's
+    code for a citation that does not resolve, so a missing git was
+    wearing a finding's exit code in every mode.
+
+    Probing for git in `main` instead would test a PROXY: `git
+    --version` can succeed while the calls below still fail. This
+    wrapper converts the real failure at the real call, and covers
+    any git call added to this file later without being remembered.
+
+    MEASURING IT HAS ITS OWN TRAP, and it cost a run: a probe that
+    empties PATH entirely measures the shell failing to find
+    python3, exit 127, and never reaches this file at all. Symlink
+    an interpreter into the probe PATH and remove only git.
+
+    BOTH FAILURE MODES ARE ONE CASE HERE, and separating them was
+    this fix's own first mistake. Converting only FileNotFoundError
+    left the adjacent column intact: with a `git` on PATH that runs
+    and exits 128 - no repository, a corrupt index - the scan arm
+    still died with a bare CalledProcessError traceback at exit 1,
+    and `--controls` printed `3/5 controls fired` at exit 1, which
+    reads as two controls having answered and failed rather than as
+    an instrument that could not run. Measured with a shim, not
+    argued. Neither mode yields a file list, so neither is a
+    finding, and both refuse in `main` at exit 3.
+    """
+    try:
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            check=check,
+        )
+    except OSError as exc:
+        # OSError, NOT FileNotFoundError. Converged with
+        # fast-mcp-jobvite, whose copy catches the wider class:
+        # git absent is only the commonest way the exec fails, and
+        # a git that is present but not executable raises
+        # PermissionError, which is a sibling under OSError and
+        # would have walked past the narrower name.
+        raise GitUnavailableError(
+            f"git {' '.join(args)} could not be run at all: {exc}"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        # THE THIRD MODE, found by review round 4 on this branch and
+        # already fixed in fast-mcp-jobvite's copy. `text=True` makes
+        # `subprocess.run` decode, so a git that exits 0 and emits
+        # bytes that are not UTF-8 raises HERE, which is neither
+        # FileNotFoundError nor CalledProcessError and so walked
+        # straight past a guard naming those two. Reproduced with a
+        # fake git printing one 0xff byte: bare traceback at exit 1.
+        raise GitUnavailableError(
+            f"git {' '.join(args)} ran but its output is not UTF-8: {exc}"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise GitUnavailableError(
+            f"git {' '.join(args)} exited {exc.returncode}: "
+            f"{(exc.stderr or '').strip() or 'no stderr'}"
+        ) from exc
+
+
 def _tracked_files() -> list[pathlib.Path]:
     """Every tracked file worth scanning.
 
     `git ls-files` is the authority.
     """
-    out = subprocess.run(
-        ["git", "ls-files", "-z"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=True,
-    ).stdout
+    out = _git(["ls-files", "-z"], check=True).stdout
     files = []
     for name in out.split("\0"):
         if not name:
@@ -123,12 +201,21 @@ def _tracked_files() -> list[pathlib.Path]:
 #: for. That review is NOT carried here and is described rather than
 #: named: the template's docs/ holds no records, so naming it would be
 #: a pointer to a file nobody can open.
-EXEMPT_MARKER = repoint_exempt.MARKER
 #: CITATIONS skipped, not LINES. #142 changed the unit deliberately:
 #: the old line count reported 51 while 36 of those lines carried no
 #: citation at all, so the number that was supposed to make the
 #: exemption visible was mostly counting prose about the exemption.
 EXEMPT_SKIPPED = 0
+
+#: BOTH scan arms print this and exit non-zero on an empty corpus.
+#: An empty corpus is a BROKEN SELECTOR and never a clean tree. It
+#: is a constant so `--controls` can assert this exact string: a
+#: control that accepted any non-zero would also pass on a shallow
+#: checkout's exit 3, which is a different failure entirely.
+EMPTY_CORPUS = (
+    "SELECTOR CONTROL: no DESIGN.md citations found anywhere. The "
+    "pattern is broken, not the corpus."
+)
 
 
 def citations() -> list[tuple[pathlib.Path, int, int, int]]:
@@ -185,10 +272,7 @@ def line_map(old_text: str, new_text: str) -> dict[int, int | None]:
 def _report_bounds(total_lines: int) -> int:
     found = citations()
     if not found:
-        print(
-            "SELECTOR CONTROL: no DESIGN.md citations found anywhere. The "
-            "pattern is broken, not the corpus."
-        )
+        print(EMPTY_CORPUS)
         return 1
 
     bad = [
@@ -232,7 +316,7 @@ def _report_bounds(total_lines: int) -> int:
     return 0
 
 
-def _report_moves(sha: str) -> int:
+def _report_moves(sha: str, new: str) -> int:
     # `check=True` USED TO RAISE HERE, and the traceback it produced
     # cost three CI rounds to read. On a SHALLOW checkout the blob is
     # simply absent, `git show` exits 128, and CalledProcessError
@@ -242,13 +326,7 @@ def _report_moves(sha: str) -> int:
     # A MISSING OBJECT IS A BROKEN INSTRUMENT, NOT A FINDING, and the
     # two must not share an exit code. `check-design-freeze.py` already
     # says this for the same cause; here is its sibling learning it.
-    done = subprocess.run(
-        ["git", "show", f"{sha}:docs/DESIGN.md"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=False,
-    )
+    done = _git(["show", f"{sha}:docs/DESIGN.md"], check=False)
     if done.returncode != 0:
         detail = done.stderr.strip()
         print(f"git show {sha}:docs/DESIGN.md failed: {detail}")
@@ -273,7 +351,31 @@ def _report_moves(sha: str) -> int:
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
         return 3
     old = done.stdout
-    new = DESIGN.read_text()
+    # AN EMPTY CORPUS IS A BROKEN INSTRUMENT HERE TOO, AND THIS ARM
+    # DID NOT SAY SO. `_report_bounds` has refused one since it was
+    # written; this arm computed `citations()` only at the loop
+    # below, so it could answer 0 moved and exit 0 having read no
+    # file at all. Ported from fast-mcp-jobvite 0d6f930, where the
+    # amputated enumeration printed `0 citation(s) moved` at exit 0
+    # against 1618 moved with it intact.
+    #
+    # HERE THE SAME FAIL-OPEN IS MASKED DIFFERENTLY, and that is
+    # worth writing down because it changes what a reader should
+    # look for. This template's DESIGN.md IS byte-identical to its
+    # freeze, so the short circuit below returned 0 first, and no
+    # amputation was needed to reach a green that had read nothing.
+    # MEASURED 2026-09-09 at 1894b70: `--since $(cat
+    # docs/DESIGN-FREEZE.txt)` printed `DESIGN.md is byte-identical`
+    # and exited 0 with the enumeration intact AND amputated.
+    #
+    # POSITION IS LOAD-BEARING. Below the `git show`, so a shallow
+    # checkout still gets its own message and its own exit 3; above
+    # the byte-identical short circuit, which answers `no citation
+    # can have moved` without ever asking whether there are any.
+    found = citations()
+    if not found:
+        print(EMPTY_CORPUS)
+        return 1
     if old == new:
         print(f"DESIGN.md is byte-identical to {sha}. No citation can have moved.")
         return 0
@@ -281,7 +383,7 @@ def _report_moves(sha: str) -> int:
     mapping = line_map(old, new)
     moved: list[str] = []
     broken: list[str] = []
-    for path, lineno, start, end in citations():
+    for path, lineno, start, end in found:
         new_start, new_end = mapping.get(start), mapping.get(end)
         rel = path.relative_to(REPO_ROOT)
         cited = f"DESIGN.md:{start}" + (f"-{end}" if end != start else "")
@@ -307,10 +409,19 @@ def _report_moves(sha: str) -> int:
     return 1 if (moved or broken) else 0
 
 
-def controls() -> int:
-    """Prove each check can go red, on real content."""
-    fired = total = 0
-    text = DESIGN.read_text()
+def controls(text: str) -> int:
+    """Prove each check can go red, on real content.
+
+    The DESIGN text is an ARGUMENT because it is read once, in `main`,
+    where a missing or unreadable file becomes a refusal at exit 3. It
+    was read again here and a third time in `_report_moves`, so the
+    guard `main` grew covered one of the three reads and the other two
+    kept their own bare traceback. Two guards written separately are
+    two guards that drift; one read that cannot be reached unguarded
+    cannot. The sibling `check-design-citation-shape.py` already takes
+    its corpus this way, so this is the shape that file settled on.
+    """
+    fired = total = not_run = 0
 
     total += 1
     mapping = line_map(text, "inserted\n" + text)
@@ -339,11 +450,168 @@ def controls() -> int:
     else:
         print("  CONTROL the pattern reads both forms -> DID NOT FIRE")
 
-    print(f"\n{fired}/{total} controls fired.")
+    # THE THREE CONTROLS ABOVE NEVER TOUCH THE CORPUS. They exercise
+    # the pattern and the line map against hardcoded strings, so with
+    # `_tracked_files()` returning nothing this arm still printed
+    # `3/3 controls fired.` at exit 0 while the real scan had no file
+    # to read. Board row 23. MEASURED 2026-09-09 on THIS repository,
+    # same amputation on both checkers: this arm did not move at all,
+    # and the sibling `check-design-citation-shape.py --controls`
+    # went 7/7 exit 0 to 6/7 exit 1. A controls arm blind to its own
+    # population certifies a checker that is scanning nothing.
+    #
+    # AND IT NAMES MEMBERS, NOT A SIZE, which is the correction
+    # jobvite's round 1 forced. Asserting only that the list is
+    # non-empty and holds THIS file leaves a whole KIND removable:
+    # dropping ".md" from
+    # `_SEARCH_SUFFIXES` there took the real scan from 2101 citations
+    # across 239 files to 916 across 92 while this arm still reported
+    # fully fired. The first fix required every suffix in
+    # `_SEARCH_SUFFIXES` to be represented, which is DERIVED FROM THE
+    # VERY DECLARATION THE MUTATION NARROWS, so it shrank with it and
+    # printed 5/5 at exit 0 - a control that agrees with whatever it is
+    # given. So the members are named as module constants instead.
+    #
+    # ITS REACH, STATED HONESTLY: `.py`, `.md` and `.toml` are pinned by
+    # this checker's own path, DESIGN and PYPROJECT. Dropping `.yml`,
+    # `.yaml` or `.sh` from the suffixes is still invisible here,
+    # because no constant names a member of those kinds. Name one and
+    # this arm covers it.
+    #
+    # AND IT BOUNDS NOTHING. It proves the enumeration RUNS and REACHES
+    # THREE NAMED MEMBERS. It does not prove the corpus is any
+    # particular size, and a mutation that removes files none of the
+    # three live in is invisible to it. MEASURED HERE: adding the seven
+    # tracked directories that hold no named member (`scripts`, `src`,
+    # `tests`, `adr`, `research`, `briefs`, `workflows`) to
+    # `_SKIP_PARTS` took the corpus from 84 files to 56, a third of it
+    # gone, while this arm still printed FIRED and `--controls` still
+    # exited 0 at 5/5. On fast-mcp-jobvite the same mutation is far
+    # louder, 557 files to 347 and 2101 citations to 1561; here the
+    # citation figure cannot show it at all, because this template's
+    # corpus holds ZERO citations either way, so the file count is the
+    # only figure that moves.
+    #
+    # NO FLOOR IS ADDED, DELIBERATELY. A minimum-size assertion would
+    # be a number nobody can maintain: it goes stale on every file
+    # added or removed, and a floor set low enough not to go stale
+    # proves less than these three names already do. The honest fix is
+    # to name another member, not to guess a size. This comment is the
+    # boundary, written down rather than papered over.
+    total += 1
+    here = pathlib.Path(__file__).resolve()
+    required = {"this checker": here, "DESIGN.md": DESIGN, "pyproject.toml": PYPROJECT}
+    # NO LOCAL `except` FOR A BROKEN GIT. There was one, catching
+    # CalledProcessError and printing DID NOT FIRE. It is deliberately
+    # gone: `_git` now converts every git failure to
+    # GitUnavailableError, which `main` refuses at exit 3, so the
+    # clause was unreachable -
+    # dead code wearing the appearance of a live guard. It was also
+    # answering the wrong question. A controls run whose enumeration
+    # cannot run has not measured four arms out of five; it has
+    # measured nothing about the corpus, and `3/5 controls fired` at
+    # exit 1 invites a reader to hunt two failing controls that do not
+    # exist. Refusing whole is the honest verdict.
+    tracked = _tracked_files()
+    absent = sorted(n for n, p in required.items() if p not in tracked)
+    if tracked and not absent:
+        fired += 1
+        print(f"  CONTROL the corpus is enumerated ({len(tracked)} files) -> FIRED")
+    else:
+        print(
+            f"  CONTROL the corpus is enumerated -> DID NOT FIRE "
+            f"({len(tracked)} file(s), MISSING: {', '.join(absent) or 'none'})"
+        )
+
+    # AND THE SECOND ARM, on the refusal itself. Ported from
+    # fast-mcp-jobvite 0d6f930, and WHAT IT PROVES IS NOT THE SAME
+    # HERE, which is worth writing down rather than leaving for a
+    # reader to assume.
+    #
+    # THERE it is an amputation test: that repository has a live
+    # corpus, so the refusal appears ONLY once the enumeration is
+    # amputated. HERE every remaining citation is exempt and the
+    # corpus is empty by design, so both arms refuse with the
+    # enumeration INTACT - MEASURED 2026-09-09 at 1894b70. The
+    # amputation below therefore changes nothing in this repository,
+    # and this arm is NOT the population control; the arm above is,
+    # and it is the one that moves (5/5 to 4/5, measured).
+    #
+    # WHAT IT DOES PROVE HERE is that BOTH scan arms refuse and use
+    # the SAME WORDS. That is a live assertion, not a tautology: at
+    # 1894b70 `--since $(cat docs/DESIGN-FREEZE.txt)` printed
+    # `DESIGN.md is byte-identical` and returned 0, having read no
+    # citation at all, and this arm goes 5/5 to 4/5 if that refusal
+    # is taken out again. The amputation is kept so the two copies
+    # stay one file, and so the arm becomes an amputation test on
+    # the day an adopter has a corpus of their own.
+    total += 1
+    # THIS ARM READS A FILE, AND A MISSING FILE MUST NOT BE A TRACEBACK.
+    # `--since` needs a sha and the frozen one is the only sha this arm
+    # can get without retyping a commit. MEASURED: without this guard,
+    # deleting docs/DESIGN-FREEZE.txt made `--controls` die with an
+    # unhandled FileNotFoundError at exit 1 - and 1 is this checker's
+    # code for "a citation does not resolve", so a broken instrument
+    # was wearing a finding's exit code. That is the distinction
+    # `main()` already draws for a broken register, applied here.
+    bounds_rc = moves_rc = said = -1
+    if not FREEZE.exists():
+        # NOT RUN, NOT "DID NOT FIRE". This arm needs a sha, and the
+        # frozen file is the only one it can get without retyping a
+        # commit.
+        # Without the file the arm never executes, and reporting it
+        # as DID NOT FIRE put it in the same column as an arm that
+        # ran and failed - 4/5 at exit 1, which is this checker's
+        # code for a citation that does not resolve. Tier 0's
+        # unified rule, from the same logic as every refusal in this
+        # file: a finding's exit code is never worn by an instrument
+        # that could not run.
+        not_run += 1
+        print(
+            f"  CONTROL both scan arms refuse an empty corpus -> NOT RUN "
+            f"({FREEZE.name} is missing, so --since has no sha)"
+        )
+    else:
+        real = globals()["_tracked_files"]
+        globals()["_tracked_files"] = list  # `list()` IS the empty enumeration
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                bounds_rc = _report_bounds(len(text.splitlines()))
+                moves_rc = _report_moves(
+                    FREEZE.read_text(encoding="utf-8").strip(), text
+                )
+        finally:
+            globals()["_tracked_files"] = real
+        said = buf.getvalue().count(EMPTY_CORPUS)
+        if (bounds_rc, moves_rc, said) == (1, 1, 2):
+            fired += 1
+            print("  CONTROL both scan arms refuse an empty corpus -> FIRED")
+        else:
+            print(
+                f"  CONTROL both scan arms refuse an empty corpus -> "
+                f"DID NOT FIRE (bounds rc={bounds_rc}, --since rc={moves_rc}, "
+                f"{said} of 2 refusals printed)"
+            )
+
+    # THREE COUNTS, NOT A FRACTION. A single `N/M` cannot distinguish an
+    # arm that ran and failed from one that never ran, and those need
+    # different exit codes and different reactions from a reader. The
+    # `N/M controls fired` prefix is kept so anything already reading
+    # that shape still finds it; the two new fields are additions.
+    not_fired = total - fired - not_run
+    print(
+        f"\n{fired}/{total} controls fired, {not_fired} not fired, "
+        f"{not_run} not run."
+    )
+    if not_run:
+        print("An arm that could not run has measured nothing. That is a")
+        print("BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
     return 0 if fired == total else 1
 
 
-def main(argv: list[str]) -> int:
+def _dispatch(argv: list[str]) -> int:
     # A BROKEN REGISTER IS A BROKEN INSTRUMENT, NOT A FINDING, and the
     # two must not share an exit code. That is the rule `_report_moves`
     # already states one function up for a missing git object, and this
@@ -383,14 +651,105 @@ def main(argv: list[str]) -> int:
     # still the right code for this file, because its own sibling path
     # `_report_moves` already uses it; that argument never needed a
     # census and should not have been given one.
+    # THE MODE IS READ BY POSITION, NOT BY MEMBERSHIP. This was
+    # `if "--controls" in argv`, which asks whether the STRING appears
+    # anywhere. Measured on fast-mcp-jobvite's copy: a sibling tool
+    # passing a sha positionally produced `--since --controls`, the
+    # membership test matched the VALUE of `--since`, and the checker
+    # ran its own self-test instead of the scan it was asked for and
+    # reported that as the answer. Reading argv[0] cannot do that.
+    mode = argv[0] if argv else ""
+
+    # AND THE DESIGN IS READ ONCE, HERE, GUARDED. `docs/DESIGN.md` is a
+    # precondition of every path in this file and was read unguarded
+    # at three sites: `_report_moves`, `controls` and the bounds call
+    # below. With the file moved aside every arm died with a bare
+    # FileNotFoundError at exit 1, which is this checker's code for a
+    # citation that does not resolve. It is caught HERE because this
+    # is the single entry point: the module is not importable under its
+    # hyphenated name and `__main__` below is its only caller, both
+    # read rather than assumed. `except OSError` rather than an
+    # `.exists()` test, so a file that is PRESENT but unreadable - mode
+    # 000, a directory in its place - is caught by the same guard.
+    #
+    # IT IS ALSO THE ONLY READ NOW. `controls` and `_report_moves` take
+    # this text as an argument rather than reading it again, so there
+    # is no second read for this guard to miss.
     try:
-        if "--controls" in argv:
-            return controls()
-        if "--since" in argv:
-            return _report_moves(argv[argv.index("--since") + 1])
-        return _report_bounds(len(DESIGN.read_text().splitlines()))
+        design_text = DESIGN.read_text()
+    except OSError as exc:
+        if mode == "--controls":
+            print(
+                "REFUSED: docs/DESIGN.md could not be read, so no control "
+                f"can run: {exc}"
+            )
+        else:
+            print(
+                "REFUSED: docs/DESIGN.md could not be read, so nothing was "
+                f"scanned: {exc}"
+            )
+        return 3
+
+    try:
+        if mode == "--controls":
+            return controls(design_text)
+        if mode == "--since":
+            if len(argv) < 2:
+                print(
+                    "REFUSED: --since needs a commit-ish argument, and "
+                    "none was given."
+                )
+                print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+                return 3
+            return _report_moves(argv[1], design_text)
+        return _report_bounds(len(design_text.splitlines()))
+    except GitUnavailableError as exc:
+        # Not caught by the enumeration arm's `except
+        # subprocess.CalledProcessError` one function up, deliberately:
+        # a `--controls` run without git must refuse WHOLLY at exit 3,
+        # not report 4/5 as though four arms had answered a question.
+        if mode == "--controls":
+            print(f"REFUSED: git could not be run, so no control can run: {exc}")
+        else:
+            print(f"REFUSED: git could not be run, so nothing was scanned: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
     except repoint_exempt.RegisterError as exc:
         print(f"BROKEN REGISTER: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
+
+
+def main(argv: list[str]) -> int:
+    """Run the checker; never let a crash wear a finding's exit code.
+
+    THIS CLOSES A CLASS RATHER THAN A DEFECT. Every guard above is
+    named and specific, and each was added after a round had shown
+    the exact failure it names: a missing register, an unreadable
+    design, git absent, git failing, git emitting bytes that are not
+    UTF-8. Five rounds, five types. A sixth list of types would be
+    the same mistake, longer, so this names none.
+
+    IT IS A FLOOR, NOT A REPLACEMENT. The named guards above print
+    text a reader can act on, which file and which command and which
+    mode, and a generic refusal cannot. Add a named guard for any
+    failure seen in practice; this only ensures the one nobody
+    predicted refuses instead of lying. Anything reaching here means
+    the run established NOTHING, which is what exit 3 is for, and
+    the traceback goes to stderr unabridged so nothing is lost.
+
+    Ported from fast-mcp-jobvite's fix/citation-controls-population
+    at 3cb6af0, read read-only. That branch is UNMERGED, and this is
+    a PARTIAL port: board row 47 carries the rest.
+    """
+    try:
+        return _dispatch(argv)
+    except Exception as exc:  # noqa: BLE001 - see the docstring above
+        traceback.print_exc()
+        print(
+            f"REFUSED: {type(exc).__name__} reached the top of this "
+            f"checker, so the run established nothing: {exc}"
+        )
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
         return 3
 

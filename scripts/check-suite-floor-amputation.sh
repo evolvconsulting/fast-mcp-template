@@ -36,6 +36,31 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 SCRIPT="$REPO/scripts/check-suite-floor.sh"
 TESTS="$REPO/tests/test_suite_floor.py"
+
+# THE SUBJECT TEST MUST EXIST, AND ON THIS REPOSITORY IT DOES NOT.
+# `tests/` holds `__init__.py` and `test_server.py`; the file named
+# above was never carried from the source project. Without it every
+# amputation reported SURVIVED - not because the guard is weak but
+# because pytest ran no tests at all ("no tests ran in 0.00s"), so
+# there was nothing for a deleted branch to kill. A harness that
+# cannot kill anything reports the same shape as a guard that cannot
+# fail, and those must not render identically. MEASURED on this
+# repository 2026-09-09, review round 4.
+#
+# ABOVE `mktemp`, deliberately, in the shape cd753f9 gave the three
+# sibling controls: there is no backup and no trap yet, so the
+# refusal leaves nothing behind to clean up. The result line still
+# prints, because sourcing the library armed its own EXIT trap.
+if [ ! -f "$TESTS" ]; then
+  echo "MISSING TESTS: $TESTS"
+  echo "This harness deletes one behaviour of the suite-floor guard at"
+  echo "a time and requires that test file to go red. With no test file"
+  echo "every amputation survives by default and the run measures"
+  echo "nothing. Carry the test, or repoint TESTS at your own."
+  echo "This is a BROKEN INSTRUMENT, not a finding. Exit 2."
+  exit 2
+fi
+
 BACKUP=$(mktemp)
 
 export PYTHONDONTWRITEBYTECODE=1
@@ -109,7 +134,31 @@ amputate "A3 the usage guard is deleted, so a typo'd floor is not distinguished"
 amputate "A4 the summary is read as the FIRST match, so a test's stdout spoofs it" \
   'tail -1 | cut' 'head -1 | cut'
 
-cleanup
+# RESTORE, THEN ASK DIRECTLY WHETHER IT HAPPENED. The restoration
+# question used to be answered further down by a pytest exit code,
+# which is a PROXY and was a FALSE one here: with the subject test
+# absent pytest exits 4, and this harness printed "the harness did
+# not restore the script" at exit 1 while the script was byte for
+# byte its own backup. `cmp` asks the question the sentence claims
+# to answer. It is not tautological: the comparison catches a `cp`
+# that did not take, which is the only way a restore fails here, and
+# deleting the restore in a copy of this file makes the branch fire.
+cp "$BACKUP" "$SCRIPT"
+if cmp -s "$SCRIPT" "$BACKUP"; then
+  echo "post-run restoration: the script is byte-identical to its backup"
+else
+  echo "::error::post-run restoration FAILED - $SCRIPT differs from the"
+  echo "::error::backup it was restored from, so the tree may be left mutated."
+  # THE BACKUP IS NOT REMOVED ON THIS PATH, deliberately. The EXIT trap
+  # armed above is still `harness_result_emit; cleanup`, and cleanup
+  # makes one more attempt to restore from it before deleting it. An
+  # earlier draft of this branch removed the backup here and then
+  # exited, which left the trap copying from a file that no longer
+  # existed - a failure handler that destroys the last copy of what it
+  # is trying to restore.
+  exit 1
+fi
+rm -f "$BACKUP"
 trap harness_result_emit EXIT
 
 echo
@@ -130,17 +179,23 @@ echo "$fired/$total amputations killed a test."
 echo "########## RESULT: $fired killed, $((total - fired)) not killed"
 harness_result_tally killed "$fired" "$total"
 
-# Post-run re-check of the real script, the same requirement the coupling
-# harness carries: a harness that leaves the tree mutated is worse than none.
+# A SECOND AND DIFFERENT QUESTION: does the subject test still pass
+# against the restored script? Restoration is settled above by `cmp`.
+# This asks whether the restored guard is still green, which a
+# byte-identical file does not by itself establish - the test could
+# have been red before the run started. Its failure message says that
+# and no longer claims a restoration that did happen.
 (cd "$REPO" && timeout "$BASELINE_TIMEOUT" uv run --frozen pytest "$TESTS" -q >/dev/null 2>&1)
 recheck_rc=$?
 if [ "$recheck_rc" -eq 124 ]; then
   echo "::error::post-run re-check HUNG - ${BASELINE_TIMEOUT}s with no result. This is NOT a"
-  echo "::error::pass and NOT a fail: whether the tree was restored is UNKNOWN."
+  echo "::error::pass and NOT a fail: whether the restored script is green is UNKNOWN."
   exit 4
 fi
 if [ "$recheck_rc" -ne 0 ]; then
-  echo "::error::post-run re-check FAILED - the harness did not restore the script"
+  echo "::error::post-run re-check FAILED - the restored script does not pass its"
+  echo "::error::own test (pytest exit=$recheck_rc). The file IS restored; see the"
+  echo "::error::cmp result above. Read this as a red guard, not a dirty tree."
   exit 1
 fi
 echo "post-run re-check of the real script: exit=0"

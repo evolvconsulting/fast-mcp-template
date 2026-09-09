@@ -187,7 +187,29 @@ REVIEWS = ROOT / "docs" / "reviews"
 #: The commit from which review coverage is claimed. **A CONSTANT, never
 #: derived from the declarations** - see R12-H3. Moving it FORWARD hides
 #: commits, so it changes only with a recorded reason.
-CONTAINER_BASE = "8695101"
+#:
+#: THE RECORDED REASON, 2026-09-09. This read `8695101` until today, and
+#: that is a fast-mcp-jobvite commit this repository has never held:
+#: `git cat-file -t 8695101` answers "Not a valid object name". It was
+#: carried in by the extraction and NOTHING NOTICED FOR A WEEK, because
+#: until the first review stub landed the population was empty and the
+#: checker exited 2 at "MATCHED ZERO review documents" before the
+#: `rev-list` below ever read the base. An early refusal hides that the
+#: later stages never ran. D9's five stubs made the population real and
+#: the foreign base surfaced immediately, as `git rev-list
+#: 8695101..origin/main failed: fatal: ambiguous argument`, exit 3.
+#:
+#: WHY THE ROOT COMMIT AND NOT A LATER ONE. This file's own rule decides
+#: it: moving the base FORWARD hides commits. `7e9e44c` is the
+#: extraction itself, so there is no earlier commit to hide, and every
+#: commit this template has ever had is in the question. The first
+#: Gate-green commit instead would silently drop the commits between - a
+#: smaller backlog bought by asking a smaller question.
+#:
+#: `A..B` EXCLUDES `A`, so the root commit itself is never scored. That
+#: is inherent to the range and is stated rather than left to be
+#: rediscovered: coverage is claimed FROM the extraction, not OF it.
+CONTAINER_BASE = "7e9e44c"
 
 IS_REVIEW = re.compile(r"REVIEW.*-R\d+", re.IGNORECASE)
 NOT_A_COMMIT_REVIEW = re.compile(r"^PLAN-REVIEW|REVIEW$", re.IGNORECASE)
@@ -201,15 +223,18 @@ DECLARATION = re.compile(
 
 #: Rounds that reviewed a UNIT at a tree state and have no range to
 #: recover. **A blank reason is not an exemption** (R12-M5).
-UNDECLARED_BY_HISTORY: dict[str, str] = {
-    "REVIEW-CODE-R2.md": "reviewed U1/U3/U4 at a pinned SHA, not a range",
-    "REVIEW-R3.md": "reviewed 'the seven merged units', not a range",
-    "REVIEW-R4.md": "reviewed U5 at 555bad6, a tree state, not a range",
-    "REVIEW-R5.md": "reviewed U6 at d0abd10, a tree state, not a range",
-    "REVIEW-R6.md": "reviewed U7 at ec38835, a tree state, not a range",
-    "REVIEW-R7.md": "reviewed U8/U9/U12/U10 at bc0f958, a tree state",
-    "REVIEW-R8.md": "reviewed U14 at 2c6ff19, a tree state, not a range",
-}
+#:
+#: EMPTY HERE, AND THAT IS THE CORRECT VALUE rather than an omission.
+#: It arrived from the extraction holding seven rows naming
+#: fast-mcp-jobvite review documents - REVIEW-CODE-R2.md and
+#: REVIEW-R3.md through REVIEW-R8.md - none of which this repository
+#: has ever contained. Every key was dead: the lookup is by FILENAME
+#: against the population, so no row could ever be reached, and the
+#: SHAs inside the reasons resolve to nothing here either. A dead
+#: exemption is worse than none, because it reads as a considered
+#: decision about this repository. Add a row when a round here
+#: reviews a tree state rather than a range.
+UNDECLARED_BY_HISTORY: dict[str, str] = {}
 assert all(v.strip() for v in UNDECLARED_BY_HISTORY.values()), (
     "a blank reason is not an exemption"
 )

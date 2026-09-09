@@ -1,4 +1,4 @@
-fast-mcp-jobvite
+fast-mcp-template
 Copyright 2026 evolv Consulting
 
 This product includes software developed at evolv Consulting.
@@ -6,7 +6,6 @@ This product includes software developed at evolv Consulting.
 Licensed under the Apache License, Version 2.0. See the LICENSE file for the
 full terms.
 
-This is an independent integration for the Jobvite recruiting platform. It is
-not affiliated with, endorsed by, or supported by Jobvite or Employ Inc.
-"Jobvite" is a trademark of its respective owner and is used here only to
-identify the API this software talks to.
+This is a template for building an MCP server. It integrates with no third
+party of its own. A project started from it should say here which service it
+talks to, and disclaim affiliation with that service's owner.

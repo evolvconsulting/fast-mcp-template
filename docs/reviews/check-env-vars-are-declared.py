@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flag a `JOBVITE_*` name that `src/` documents but nothing declares.
+"""Flag an env-prefixed name that `src/` documents but nothing declares.
 
     python3 docs/reviews/check-env-vars-are-declared.py
 
@@ -9,6 +9,13 @@ consumed?"* and starts from the `Settings` class. This one asks *"is
 this documented variable declared?"* and starts from the strings in the
 source. **A name invented in a comment is invisible to the first checker
 by construction**, because it never reaches `Settings` at all.
+
+**THE TWO PARAGRAPHS BELOW ARE HISTORY, in the identifiers of their
+own time.** They record the measurement in fast-mcp-jobvite that
+produced this checker. No file, variable or design section they name
+exists in this template, and they are kept rather than rewritten
+because a past measurement is not made true or false by a later
+extraction. What the checker DOES is stated above and below them.
 
 **MEASURED at `0fe4628`.** Four names appear only in `#:` comments
 beside `Final` constants in `services/jobvite_client.py`:
@@ -27,9 +34,9 @@ three variables had no names, and a reviewer's guesses were correctly
 not adopted on that basis.
 
 **WHAT THIS CANNOT DO.** It matches a literal string. A variable read
-through composition - `f"JOBVITE_{suffix}"` - is invisible to it, and so
-is one documented in prose that never appears in `src/`. Stated here
-rather than discovered later.
+through composition - `f"{PREFIX}{suffix}"` - is invisible to it, and
+so is one documented in prose that never appears in `src/`. Stated
+here rather than discovered later.
 """
 
 from __future__ import annotations
@@ -42,37 +49,87 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 CONFIG = ROOT / "src" / "fast_mcp_template" / "config.py"
-PREFIX = "JOBVITE_"
+
+
+def _config_text() -> str:
+    """`config.py`'s source, or a NAMED REFUSAL at exit 3.
+
+    **A MISSING CONFIG IS A BROKEN INSTRUMENT, NOT A FINDING.** Both
+    readers of this file used bare `read_text`, so a CONFIG pointing at
+    a path that is not there raised FileNotFoundError as an unhandled
+    traceback, and an unhandled exception exits 1 - the code `main()`
+    uses for a real undeclared name. A broken instrument was wearing a
+    finding's exit code, which is the exact distinction the rest of this
+    directory keeps.
+
+    THAT IS REACHABLE RATHER THAN CONTRIVED. This checker's own registry
+    row tells an adopter to point CONFIG at their renamed package, and
+    the moment between editing that constant and moving the file is
+    precisely when it is wrong. Found by review round 1 on this branch,
+    in code this branch had just added, in the same shape this branch
+    had already fixed three times in other files.
+
+    ONE HELPER FOR BOTH READ SITES, deliberately: `_env_prefix` and
+    `declared` each read the same file, and two guards written
+    separately are two guards that can drift.
+    """
+    try:
+        return CONFIG.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"{CONFIG} could not be read: {exc}")
+        print("Point CONFIG at this project's settings module.")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        raise SystemExit(3) from exc
+
+
+def _env_prefix() -> str:
+    """This project's env prefix, READ from config.py, never retyped.
+
+    It arrived from the extraction as the literal `JOBVITE_`, so this
+    checker was scanning this repository for ANOTHER project's
+    variables and could match nothing here whatever `src/` said. A
+    constant that mirrors a value living in another file drifts the
+    moment that file changes; reading it cannot.
+    """
+    found = re.search(r'env_prefix\s*=\s*"([A-Za-z0-9_]+)"', _config_text())
+    if not found:
+        print(f"no env_prefix= in {CONFIG}. Point CONFIG at this")
+        print("project's settings module. This is a BROKEN INSTRUMENT,")
+        print("not a finding. Exit 3.")
+        raise SystemExit(3)
+    return found.group(1)
+
+
+PREFIX = _env_prefix()
 # `(?<![\w])` IS LOAD-BEARING. Without it this matched
 # `_JOBVITE_BREAKER`, a PRIVATE MODULE VARIABLE, and reported it as an
 # undeclared environment variable - one false finding out of five on the
-# first run. A checker whose first output is 20% noise is one nobody
-# reads twice.
-NAME = re.compile(r"(?<![\w])JOBVITE_[A-Z][A-Z0-9_]*")
+# first run (in the source project, whose prefix that was). A checker
+# whose first output is 20% noise is one nobody reads twice.
+NAME = re.compile(rf"(?<![\w]){PREFIX}[A-Z][A-Z0-9_]*")
 
 #: Names that are deliberately not `Settings` fields, each with the
 #: reason a reader needs. A bare name is refused: the reason IS the
 #: exemption, the same shape `.file-type-allowlist` uses.
-EXEMPT: dict[str, str] = {
-    "JOBVITE_CANDIDATE_DATA": (
-        "Not a variable at all: it is the FENCE TAG `utils/redaction.py` wraps "
-        "untrusted candidate content in. The checker matches any JOBVITE_* "
-        "literal, so a fence name reads like a setting - the second "
-        "false-positive class it has produced, after a private module "
-        "variable. Exempted rather than narrowed, because a pattern that "
-        "tried to tell a tag from a variable would start guessing."
-    ),
-}
+#:
+#: EMPTY HERE. Its one row exempted `JOBVITE_CANDIDATE_DATA`, a FENCE
+#: TAG in the source project's `utils/redaction.py`, a file this
+#: template does not have; with the prefix now derived, that name
+#: cannot match at all. The row is deleted rather than kept, because a
+#: dead exemption reads as a decision someone made about THIS
+#: repository. Add one when a literal here matches the pattern and is
+#: not a setting.
+EXEMPT: dict[str, str] = {}
 
 
 def declared() -> set[str]:
-    """`JOBVITE_*` names a `Settings` field would answer to.
+    """Prefixed names a `Settings` field would answer to.
 
-    pydantic-settings maps a field to `JOBVITE_<FIELD>` through
+    pydantic-settings maps a field to `<PREFIX><FIELD>` through
     `env_prefix`, so the literal never appears in `config.py` - which is
     why this is derived from the field names rather than grepped.
     """
-    tree = ast.parse(CONFIG.read_text(encoding="utf-8"))
+    tree = ast.parse(_config_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "Settings":
             return {
@@ -92,7 +149,7 @@ def _tracked_sources() -> list[pathlib.Path]:
     `git ls-files` enumerates the container and the suffix is the
     filter. The previous form, `(ROOT / "src").rglob("*.py")`, selected
     by PATH: it admitted any UNTRACKED `.py` left under `src/`, so a
-    scratch file could supply a `JOBVITE_*` literal and manufacture an
+    scratch file could supply a prefixed literal and manufacture an
     undeclared-name finding that no committed source contains.
 
     MEASURED WHEN THIS CHANGED, and the honest reading is the weaker
@@ -120,7 +177,7 @@ def _tracked_sources() -> list[pathlib.Path]:
 
 
 def mentioned() -> dict[str, list[str]]:
-    """Every `JOBVITE_*` literal in `src/`, mapped to where it is."""
+    """Every prefixed literal in `src/`, mapped to where it is."""
     found: dict[str, list[str]] = {}
     for path in _tracked_sources():
         for num, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -137,7 +194,7 @@ def main() -> int:
         return 1
 
     print(f"`Settings` declares: {len(known)}")
-    print(f"`JOBVITE_*` names appearing in src/: {len(seen)}")
+    print(f"`{PREFIX}*` names appearing in src/: {len(seen)}")
 
     undeclared = {n: w for n, w in seen.items() if n not in known}
     bad = {n: w for n, w in undeclared.items() if n not in EXEMPT}
@@ -160,7 +217,8 @@ def main() -> int:
         print("An operator sets it and gets nothing.")
         return 1
 
-    print("\nEvery `JOBVITE_*` name in src/ is a declared Settings field, or")
+    print(f"\nEvery `{PREFIX}*` name in src/ is a declared Settings field,")
+    print("or")
     print("exempt with a reason. NOTE: this matches LITERALS - a name built by")
     print("composition, or documented only in prose, is invisible to it.")
     return 0
