@@ -272,11 +272,22 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "same commit as its subject, never before."
     ),
     "check-committed-file-types.py": (
-        "TURN ON once `.file-type-allowlist` names the kinds this "
-        "project really commits. It refuses a committed file whose "
-        "extension is not on that list, which is the cheapest guard "
-        "against a stray artefact, a weights blob or a `.env` "
-        "reaching the remote."
+        "refuses a committed file whose extension is not in "
+        "ALLOWED_EXTENSIONS, the cheapest guard against a stray "
+        "artefact, a weights blob or a `.env` reaching the remote. "
+        "IT PASSES HERE ALREADY: `--all` reports '101 file(s) "
+        "checked, none refused.' at rc=0, measured 2026-09-09. "
+        "THE PRECONDITION IS ALLOWED_EXTENSIONS IN THIS FILE, 18 "
+        "entries and already populated, not `.file-type-allowlist`: "
+        "that file exists, holds 15 lines, and implements a "
+        "different rule, per-PATH exceptions such as "
+        "src/fast_mcp_template/py.typed. THIS ROW USED TO SAY 'TURN "
+        "ON once .file-type-allowlist names the kinds this project "
+        "really commits', which pointed an adopter at the wrong "
+        "artifact for a precondition already met. It is unwired "
+        "because an adopter should widen ALLOWED_EXTENSIONS to the "
+        "kinds their project commits before a refusal can gate a "
+        "push, not because it cannot run."
     ),
     "check-coupling.py": (
         "TURN ON when DESIGN.md carries a section 11 threat model with a "

@@ -172,8 +172,9 @@ tree_before=$(git -C "$REPO" status --porcelain 2>/dev/null || true)
 # repository, until the commit carrying this guard: docs/reviews/lib/
 # was never carried from the source project at all. Under `set -uo
 # pipefail` a failed `.` does not stop the script, so every run hit
-# three "command not found" lines for harness_state_file,
-# harness_state_write and harness_state_clear and carried on with the
+# "command not found" lines for the state functions it calls,
+# harness_state_file, harness_state_begin and harness_state_end,
+# and carried on with the
 # SIGKILL-recovery mechanism this file describes at length silently
 # inert. The verdict stayed correct because it comes from the raw exit
 # code, which is exactly what made the silence survivable and therefore
