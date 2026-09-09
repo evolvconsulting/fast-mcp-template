@@ -401,7 +401,7 @@ def controls(text: str) -> int:
     cannot. The sibling `check-design-citation-shape.py` already takes
     its corpus this way, so this is the shape that file settled on.
     """
-    fired = total = 0
+    fired = total = not_run = 0
 
     total += 1
     mapping = line_map(text, "inserted\n" + text)
@@ -441,10 +441,9 @@ def controls(text: str) -> int:
     # population certifies a checker that is scanning nothing.
     #
     # AND IT NAMES MEMBERS, NOT A SIZE, which is the correction
-    # jobvite's
-    # round 1 forced. Asserting only that the list is non-empty and
-    # holds
-    # THIS file leaves a whole KIND removable: dropping ".md" from
+    # jobvite's round 1 forced. Asserting only that the list is
+    # non-empty and holds THIS file leaves a whole KIND removable:
+    # dropping ".md" from
     # `_SEARCH_SUFFIXES` there took the real scan from 2101 citations
     # across 239 files to 916 across 92 while this arm still reported
     # fully fired. The first fix required every suffix in
@@ -537,9 +536,20 @@ def controls(text: str) -> int:
     # `main()` already draws for a broken register, applied here.
     bounds_rc = moves_rc = said = -1
     if not FREEZE.exists():
+        # NOT RUN, NOT "DID NOT FIRE". This arm needs a sha, and the
+        # frozen file is the only one it can get without retyping a
+        # commit.
+        # Without the file the arm never executes, and reporting it
+        # as DID NOT FIRE put it in the same column as an arm that
+        # ran and failed - 4/5 at exit 1, which is this checker's
+        # code for a citation that does not resolve. Tier 0's
+        # unified rule, from the same logic as every refusal in this
+        # file: a finding's exit code is never worn by an instrument
+        # that could not run.
+        not_run += 1
         print(
-            f"  CONTROL both scan arms refuse an empty corpus -> DID NOT "
-            f"FIRE ({FREEZE.name} is missing, so --since has no sha)"
+            f"  CONTROL both scan arms refuse an empty corpus -> NOT RUN "
+            f"({FREEZE.name} is missing, so --since has no sha)"
         )
     else:
         real = globals()["_tracked_files"]
@@ -554,17 +564,30 @@ def controls(text: str) -> int:
         finally:
             globals()["_tracked_files"] = real
         said = buf.getvalue().count(EMPTY_CORPUS)
-    if (bounds_rc, moves_rc, said) == (1, 1, 2):
-        fired += 1
-        print("  CONTROL both scan arms refuse an empty corpus -> FIRED")
-    elif FREEZE.exists():
-        print(
-            f"  CONTROL both scan arms refuse an empty corpus -> "
-            f"DID NOT FIRE (bounds rc={bounds_rc}, --since rc={moves_rc}, "
-            f"{said} of 2 refusals printed)"
-        )
+        if (bounds_rc, moves_rc, said) == (1, 1, 2):
+            fired += 1
+            print("  CONTROL both scan arms refuse an empty corpus -> FIRED")
+        else:
+            print(
+                f"  CONTROL both scan arms refuse an empty corpus -> "
+                f"DID NOT FIRE (bounds rc={bounds_rc}, --since rc={moves_rc}, "
+                f"{said} of 2 refusals printed)"
+            )
 
-    print(f"\n{fired}/{total} controls fired.")
+    # THREE COUNTS, NOT A FRACTION. A single `N/M` cannot distinguish an
+    # arm that ran and failed from one that never ran, and those need
+    # different exit codes and different reactions from a reader. The
+    # `N/M controls fired` prefix is kept so anything already reading
+    # that shape still finds it; the two new fields are additions.
+    not_fired = total - fired - not_run
+    print(
+        f"\n{fired}/{total} controls fired, {not_fired} not fired, "
+        f"{not_run} not run."
+    )
+    if not_run:
+        print("An arm that could not run has measured nothing. That is a")
+        print("BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
     return 0 if fired == total else 1
 
 
