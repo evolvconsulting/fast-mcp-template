@@ -351,9 +351,26 @@ def main(argv: list[str]) -> int:
     # malformed REPOINT-EXEMPT.txt let `RegisterError` escape as a raw
     # traceback and exit 1, which is the code that means "a citation
     # does not resolve". A reader would have read a broken instrument as
-    # a finding. Exit 3 is this repository's BROKEN INSTRUMENT code, in
-    # nine checkers including this one; `repoint_exempt.main`'s own 2 is
-    # the odd one out and is not the convention followed here.
+    # a finding.
+    #
+    # EXIT 3 IS THE MAJORITY CONVENTION HERE, and no digit says how big
+    # the majority is. This comment said "nine checkers" and was wrong
+    # twice over. A review counted EIGHT by excluding the
+    # `-controls.sh` harnesses; a plain search over the container
+    # returns SEVENTEEN by including them; and nothing in this
+    # repository defines which of those two populations the word
+    # "checker" names. A count whose partition is undefined is not a
+    # fact about the tree, it is a fact about the counter, and this
+    # branch has now deleted three such digits for the same reason.
+    #
+    # The same sentence also called `repoint_exempt.main`'s exit 2 "the
+    # odd one out". It is not the only one:
+    # `check-brief-report-references.py` also exits 2 for this concept
+    # and IS a checker rather than a module, so the exception is
+    # neither unique nor explained by being a `__main__`. Exit 3 is
+    # still the right code for this file, because its own sibling path
+    # `_report_moves` already uses it; that argument never needed a
+    # census and should not have been given one.
     try:
         if "--controls" in argv:
             return controls()
