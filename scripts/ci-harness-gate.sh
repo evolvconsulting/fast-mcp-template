@@ -168,6 +168,27 @@ tree_before=$(git -C "$REPO" status --porcelain 2>/dev/null || true)
 #   * HEAD must resolve. No sha, no reference, no state.
 #   * An existing state file is NEVER overwritten. It is another run's evidence,
 #     and clobbering it would destroy the only record of what that run mutated.
+# THE LIB MUST EXIST BEFORE IT IS SOURCED. It did not, on this
+# repository, until the commit carrying this guard: docs/reviews/lib/
+# was never carried from the source project at all. Under `set -uo
+# pipefail` a failed `.` does not stop the script, so every run hit
+# three "command not found" lines for harness_state_file,
+# harness_state_write and harness_state_clear and carried on with the
+# SIGKILL-recovery mechanism this file describes at length silently
+# inert. The verdict stayed correct because it comes from the raw exit
+# code, which is exactly what made the silence survivable and therefore
+# invisible. MEASURED 2026-09-09, review round 5. Refusing by name is
+# the shape cd753f9 gave three sibling controls.
+if [ ! -f "$REPO/docs/reviews/lib/harness-state.sh" ]; then
+  echo "MISSING LIB: $REPO/docs/reviews/lib/harness-state.sh"
+  echo "This gate records what a harness mutated so a run killed by"
+  echo "SIGKILL can be recovered. Without the library it cannot record"
+  echo "anything, and three shell functions would be silently absent."
+  echo "Carry docs/reviews/lib/harness-state.sh, or drop the state"
+  echo "tracking deliberately and remove this block with it."
+  echo "This is a BROKEN INSTRUMENT, not a finding. Exit 2."
+  exit 2
+fi
 # shellcheck source=../docs/reviews/lib/harness-state.sh
 . "$REPO/docs/reviews/lib/harness-state.sh"
 state_written=0

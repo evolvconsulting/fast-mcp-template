@@ -21,9 +21,25 @@
 # and the first version of the fix had the order wrong.
 set -uo pipefail
 
+# THE CANONICAL RESULT LINE. docs/reviews/check-harness-result.sh
+# asserts { scripts that emit the line } == { scripts that exist },
+# over the glob scripts/*.sh, and its own header says there is "no
+# table in this file, no allowlist, and no harness vs not a harness
+# partition - a partition would be the same hand-kept list one level
+# up". This script was in that glob and emitted nothing, so the gate
+# was red for exactly the reason it is designed to go red: a script
+# was added and not wired. Sourcing the library arms an EXIT trap
+# that prints the line on every path.
+# shellcheck source=lib/harness-result.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/harness-result.sh"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# THE EMITTER IS CHAINED IN FRONT of this script's own cleanup.
+# bash has no trap stack, so setting an EXIT trap REPLACES the one
+# the library armed; without the chain this script would disarm
+# the line it just gained, on every path including its aborts.
+trap 'harness_result_emit; rm -rf "$WORK"' EXIT
 
 # The three files the defect ate, derived from the template rather than
 # retyped - a retyped list goes stale the day a fourth is added.
@@ -33,6 +49,10 @@ if [ "${#LIBS[@]}" -eq 0 ]; then
   echo "Either the directory moved or this proof is already vacuous." >&2
   exit 2
 fi
+# RAN, past the setup refusal above, with the subject count as rows
+# and no floor: the arms below are a fixed set, not a ratchet.
+harness_result_ran "${#LIBS[@]}" 0
+
 echo "Subject: ${#LIBS[@]} file(s) under scripts/lib/ - ${LIBS[*]}"
 echo
 

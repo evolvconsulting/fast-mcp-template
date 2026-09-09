@@ -23,6 +23,18 @@
 # something recent.
 set -euo pipefail
 
+# THE CANONICAL RESULT LINE. docs/reviews/check-harness-result.sh
+# asserts { scripts that emit the line } == { scripts that exist },
+# over the glob scripts/*.sh, and its own header says there is "no
+# table in this file, no allowlist, and no harness vs not a harness
+# partition - a partition would be the same hand-kept list one level
+# up". This script was in that glob and emitted nothing, so the gate
+# was red for exactly the reason it is designed to go red: a script
+# was added and not wired. Sourcing the library arms an EXIT trap
+# that prints the line on every path.
+# shellcheck source=lib/harness-result.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/harness-result.sh"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESIGN="docs/DESIGN.md"
 FREEZE="docs/DESIGN-FREEZE.txt"
@@ -40,6 +52,13 @@ if [ -n "$(git status --porcelain -- "$DESIGN")" ]; then
   echo "disk. Commit the design first, then run this again." >&2
   exit 2
 fi
+
+# RAN, with no rows and no floor. The library's own comment says 0
+# "is not a floor anything can breach, and it reads as absent",
+# which is the honest shape for a tool that freezes one file and
+# counts nothing. Called here, past every refusal above, so the
+# line says refused when this script refuses and ok when it works.
+harness_result_ran 0 0
 
 sha="$(git log -1 --format=%H -- "$DESIGN")"
 if [ -z "$sha" ]; then

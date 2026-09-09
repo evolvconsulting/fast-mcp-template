@@ -144,8 +144,16 @@ def _git(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
             cwd=REPO_ROOT,
             check=check,
         )
-    except FileNotFoundError as exc:
-        raise GitUnavailableError(f"git is not on PATH: {exc}") from exc
+    except OSError as exc:
+        # OSError, NOT FileNotFoundError. Converged with
+        # fast-mcp-jobvite, whose copy catches the wider class:
+        # git absent is only the commonest way the exec fails, and
+        # a git that is present but not executable raises
+        # PermissionError, which is a sibling under OSError and
+        # would have walked past the narrower name.
+        raise GitUnavailableError(
+            f"git {' '.join(args)} could not be run at all: {exc}"
+        ) from exc
     except UnicodeDecodeError as exc:
         # THE THIRD MODE, found by review round 4 on this branch and
         # already fixed in fast-mcp-jobvite's copy. `text=True` makes
@@ -687,7 +695,10 @@ def _dispatch(argv: list[str]) -> int:
             return controls(design_text)
         if mode == "--since":
             if len(argv) < 2:
-                print("REFUSED: --since needs a sha, and none was given.")
+                print(
+                    "REFUSED: --since needs a commit-ish argument, and "
+                    "none was given."
+                )
                 print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
                 return 3
             return _report_moves(argv[1], design_text)
