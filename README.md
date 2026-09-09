@@ -131,6 +131,40 @@ the subject measured 7.45% coverage and 158 mypy errors. Both are now
 baselines you record on day one and may not regress. That is the difference
 between a gate that works from day one at 7% and one that gets switched off.
 
+**Carried machinery is not trusted machinery until it has run to a
+verdict HERE.** Everything under `docs/reviews/` and `scripts/` arrived from
+another repository. A checker that refuses early looks exactly like a checker
+that is fine: it prints a reason, exits non-zero, and nobody asks what the
+stages *after* the refusal would have said. Two carried files were found this
+way on this template a week after extraction, and neither was found by reading.
+
+- **Run each one past its first refusal, once, to a verdict.** Plant the
+  smallest input that gets it there - one stub file, one recorded row, one
+  declaration - read what it then says, and restore. `check-review-coverage.py`
+  refused at an empty population on every run since extraction; the first
+  review stub landed, the population became real, and the very next stage died
+  on a commit SHA belonging to the project this template came from.
+- **List every constant in a carried file that names a commit, a path, a
+  project or a count, and ask whether it belongs to YOU.** Grepping the old
+  project's name is not enough and will feel like it is.
+  `scripts/check-harness-anchors.py` carried a regex example naming the source
+  project's API key, which that grep does find; the same sweep also turned up a
+  foreign commit, foreign design-section headings, foreign harness filenames and
+  a foreign module inside an otherwise-renamed path, none of which it finds.
+- **A checker with subcommands needs each arm run.** One here reaches a clean
+  verdict with no arguments and dies on a foreign constant under `--self-test`.
+- **Fixing one refusal can uncover a wrong answer, not just an unrun stage.**
+  Emptying one carried dictionary here stopped a checker refusing on a missing
+  file and revealed that its next arm had been reporting a setting as "read
+  now" that this project has never had.
+
+**Replaying the Gate locally.** Copy each `run:` block out of
+`.github/workflows/ci.yml` by hand, flags and all, run each under `bash -e`,
+and print one exit code per line: a wrapper's own exit code is not the verdict,
+and `| tail` looks identical red or clean. The Gate job passes
+`DEFAULT_BRANCH` in from the workflow context, so supply your default branch
+when you replay the step that reads it.
+
 **Expect real findings, and they are the point.** Ruff's wider selection
 surfaced 18 substantive issues in the subject's code that its own
 `select = ["E","F","I","W"]` could never see — missing `raise ... from`,
@@ -151,8 +185,10 @@ superseded run. `runs-on: ubuntu-latest` everywhere — a macOS runner bills at
 
 ## What is actually enforced today
 
-**Five gates are ENABLED.** They are the ones that hold on a project with no
-code in it yet:
+**Seven checkers are ENABLED**, listed below. The registry counts ELEVEN
+wired members, because it also counts three controls scripts and
+`check-scripts-lib-survives-gitignore.sh` from the `.gitignore` note above.
+These are the ones that hold on a project with no code in it yet:
 
 | Gate | What it asserts |
 |---|---|
@@ -164,9 +200,11 @@ code in it yet:
 | `check-coverage-ratchet.py` | coverage has not fallen below `docs/coverage-baseline.txt` |
 | `check-mypy-ratchet.py` | no mypy error that `docs/mypy-baseline.txt` does not already record |
 
-Each of the last three ships with a controls script that plants the failure
-and requires the checker to refuse it, and those controls run in Gate too — a
-gate nobody has watched fail is a gate nobody has tested.
+Four of them ship with a controls script that plants the failure and requires
+the checker to refuse it: the wiring checker's own `--self-test`, and one
+each for the design freeze, the default-branch trigger and the two ratchets
+together. All four run in Gate: a gate nobody has watched fail is a gate
+nobody has tested.
 
 `check-quickstart.py` **ships DISABLED.** It hardcodes `fastmcp inspect`,
 which takes a *file* and therefore cannot load a package using relative
