@@ -80,6 +80,11 @@ import repoint_exempt
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DESIGN = REPO_ROOT / "docs" / "DESIGN.md"
 FREEZE = REPO_ROOT / "docs" / "DESIGN-FREEZE.txt"
+#: NAMED SO THE ENUMERATION CONTROL CAN ASSERT A `.toml` MEMBER.
+#: The control below pins one file per suffix it can name; without a
+#: constant of this kind it could only assert a COUNT, and a count
+#: shrinks with the very declaration a suffix mutation narrows.
+PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 # Examples, REPOINT-EXEMPT: `DESIGN.md:603`, `DESIGN.md:918-924` - these
 # are what the pattern MATCHES, not citations of anything, so they must
@@ -382,18 +387,51 @@ def controls() -> int:
     # and the sibling `check-design-citation-shape.py --controls`
     # went 7/7 exit 0 to 6/7 exit 1. A controls arm blind to its own
     # population certifies a checker that is scanning nothing.
+    #
+    # AND IT NAMES MEMBERS, NOT A SIZE, which is the correction
+    # jobvite's
+    # round 1 forced. Asserting only that the list is non-empty and
+    # holds
+    # THIS file leaves a whole KIND removable: dropping ".md" from
+    # `_SEARCH_SUFFIXES` there took the real scan from 2101 citations
+    # across 239 files to 916 across 92 while this arm still reported
+    # fully fired. The first fix required every suffix in
+    # `_SEARCH_SUFFIXES` to be represented, which is DERIVED FROM THE
+    # VERY DECLARATION THE MUTATION NARROWS, so it shrank with it and
+    # printed 5/5 at exit 0 - a control that agrees with whatever it is
+    # given. So the members are named as module constants instead.
+    #
+    # ITS REACH, STATED HONESTLY: `.py`, `.md` and `.toml` are pinned by
+    # this checker's own path, DESIGN and PYPROJECT. Dropping `.yml`,
+    # `.yaml` or `.sh` from the suffixes is still invisible here,
+    # because
+    # no constant names a member of those kinds. Name one and this arm
+    # covers it.
     total += 1
-    tracked = _tracked_files()
     here = pathlib.Path(__file__).resolve()
-    if tracked and here in tracked:
-        fired += 1
-        print(f"  CONTROL the corpus is enumerated ({len(tracked)} files) -> FIRED")
-    else:
+    required = {"this checker": here, "DESIGN.md": DESIGN, "pyproject.toml": PYPROJECT}
+    try:
+        tracked = _tracked_files()
+    except subprocess.CalledProcessError as exc:
+        # `git ls-files` runs with check=True, so a broken git raised
+        # CalledProcessError straight out of this arm at exit 1 - the
+        # code
+        # this checker uses for a citation that does not resolve. A
+        # control that cannot run says so.
         print(
             f"  CONTROL the corpus is enumerated -> DID NOT FIRE "
-            f"({len(tracked)} file(s), this checker "
-            f"{'present' if here in tracked else 'MISSING'})"
+            f"(git ls-files failed: {exc})"
         )
+    else:
+        absent = sorted(n for n, p in required.items() if p not in tracked)
+        if tracked and not absent:
+            fired += 1
+            print(f"  CONTROL the corpus is enumerated ({len(tracked)} files) -> FIRED")
+        else:
+            print(
+                f"  CONTROL the corpus is enumerated -> DID NOT FIRE "
+                f"({len(tracked)} file(s), MISSING: {', '.join(absent) or 'none'})"
+            )
 
     # AND THE SECOND ARM, on the refusal itself. Ported from
     # fast-mcp-jobvite 0d6f930, and WHAT IT PROVES IS NOT THE SAME
@@ -497,12 +535,54 @@ def main(argv: list[str]) -> int:
     # still the right code for this file, because its own sibling path
     # `_report_moves` already uses it; that argument never needed a
     # census and should not have been given one.
+    # THE MODE IS READ BY POSITION, NOT BY MEMBERSHIP. This was
+    # `if "--controls" in argv`, which asks whether the STRING appears
+    # anywhere. Measured on fast-mcp-jobvite's copy: a sibling tool
+    # passing a sha positionally produced `--since --controls`, the
+    # membership test matched the VALUE of `--since`, and the checker
+    # ran
+    # its own self-test instead of the scan it was asked for and
+    # reported
+    # that as the answer. Reading argv[0] cannot do that.
+    mode = argv[0] if argv else ""
+
+    # AND THE DESIGN IS READ ONCE, HERE, GUARDED. `docs/DESIGN.md` is a
+    # precondition of every path in this file and was read unguarded at
+    # three sites: `_report_moves`, `controls` and the bounds call
+    # below.
+    # With the file moved aside every arm died with a bare
+    # FileNotFoundError at exit 1, which is this checker's code for a
+    # citation that does not resolve. It is caught HERE because this is
+    # the single entry point: the module is not importable under its
+    # hyphenated name and `__main__` below is its only caller, both read
+    # rather than assumed. `except OSError` rather than a
+    # `.exists()` test, so a file that is PRESENT but unreadable - mode
+    # 000, a directory in its place - is caught by the same guard.
     try:
-        if "--controls" in argv:
+        design_text = DESIGN.read_text()
+    except OSError as exc:
+        if mode == "--controls":
+            print(
+                "REFUSED: docs/DESIGN.md could not be read, so no control "
+                f"can run: {exc}"
+            )
+        else:
+            print(
+                "REFUSED: docs/DESIGN.md could not be read, so nothing was "
+                f"scanned: {exc}"
+            )
+        return 3
+
+    try:
+        if mode == "--controls":
             return controls()
-        if "--since" in argv:
-            return _report_moves(argv[argv.index("--since") + 1])
-        return _report_bounds(len(DESIGN.read_text().splitlines()))
+        if mode == "--since":
+            if len(argv) < 2:
+                print("REFUSED: --since needs a sha, and none was given.")
+                print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+                return 3
+            return _report_moves(argv[1])
+        return _report_bounds(len(design_text.splitlines()))
     except repoint_exempt.RegisterError as exc:
         print(f"BROKEN REGISTER: {exc}")
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")

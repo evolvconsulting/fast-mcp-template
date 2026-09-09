@@ -157,6 +157,12 @@ way on this template a week after extraction, and neither was found by reading.
   Emptying one carried dictionary here stopped a checker refusing on a missing
   file and revealed that its next arm had been reporting a setting as "read
   now" that this project has never had.
+- **Run the sweep in a scratch worktree, never in a tree holding uncommitted
+  work.** Some carried machinery WRITES: three members here rewrite a file and
+  restore it, and a control that restores by `git checkout --` cannot tell a
+  member's mutation from your own edits. Measured the hard way on this
+  template: a sweep of all 52 members silently reverted two uncommitted
+  paragraphs, and the commit that followed described them anyway.
 
 **Replaying the Gate locally.**
 
