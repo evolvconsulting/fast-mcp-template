@@ -161,13 +161,15 @@ way on this template a week after extraction, and neither was found by reading.
 **Replaying the Gate locally.**
 
 ```bash
-uv run --frozen python scripts/run-gate-locally.py --tail 400
+uv run --frozen python scripts/run-gate-locally.py
 ```
 
 **The verdict is the tool's own `REPLAY` line**, not the exit code of whatever
 you wrapped around it: a wrapper's status and a `| tail` both look identical red
 or clean. It reads `ci.yml`'s own `run:` blocks rather than a second copy of
 them, and it REFUSES what it cannot faithfully reproduce instead of guessing.
+A failing step is printed IN FULL by default; `--tail N` trims it to the last N
+lines if you want that, and `--verbose` prints every step.
 If you replay a step by hand instead, run each block under `bash -e` and print
 one exit code per line, and pass `DEFAULT_BRANCH` in: the Gate gets it from the
 workflow context, so the step that reads it has nothing to read locally.
