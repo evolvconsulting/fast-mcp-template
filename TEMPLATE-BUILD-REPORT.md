@@ -499,6 +499,20 @@ red should stay red. 131 + 48 + 18 = 197.
   Gate tier's wall-time target is untested against a real repository, and the
   branch-derivation expressions in `ci.yml` are validated by actionlint and by
   reading, not by a live run.
+
+  **This stopped being true on 2026-09-03**, and the sentence above is left
+  standing because it was true when it was written. `gh run list --repo
+  evolvconsulting/fast-mcp-template` shows eleven CI runs from `2026-09-03
+  05:32Z` onward: the first FAILED, the next succeeded 4 minutes later, and
+  pull requests 1, 2 and 3 and their push-to-main runs have all been green
+  since. So three of the four claims in that bullet are now settled by live
+  runs rather than by reading. The pull-request runs execute the Gate job
+  alone, because every other job carries a push-only `if:`, and they completed
+  in **31s, 39s and 41s** against a target of three minutes. A `schedule` run
+  fired on `2026-09-06`, so the Assurance tier's cron path has also been
+  proved to trigger on Actions and not only in the workflow's own comment.
+  What is still untested is the wall-time target **against a real
+  repository**: these runs measure a template with six tests in it.
 - **How many of the other eight repos default to `dev`** is unknown. Defect 1's
   blast radius is therefore unquantified — but it is now loud rather than silent
   on every one of them, which was the point.
