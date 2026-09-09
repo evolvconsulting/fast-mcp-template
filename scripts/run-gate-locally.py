@@ -10,7 +10,11 @@
 The first form replays the `gate` job; `--job` picks another; `--root`
 replays a worktree; `--list` prints every job with its steps, or
 the one named by `--job`;
-`--self-test` plants failures and requires detection.
+`--self-test` plants failures and requires detection. A failing
+step's output is printed in full: an earlier default of sixty lines
+lost a pytest traceback behind the coverage table that follows it
+(measured on the twelfth jobvite replay). `--tail N` trims a failing
+step to its last N lines; `--verbose` prints every step's output.
 
 WHY THIS EXISTS. A gate run without CI's flags is a different, weaker
 question, and it was measured twice on this family: a bare `pytest`
@@ -430,7 +434,7 @@ def replay(
     root: Path,
     resolvers: Resolvers | None = None,
     keep_going: bool = False,
-    tail: int = 60,
+    tail: int = 0,
     verbose: bool = False,
 ) -> int:
     """Replay `job` from `workflow`; return the exit code to use."""
@@ -521,7 +525,7 @@ def replay(
             print(f"STEP {i}/{total} {name}: rc={rc} ({seconds:.1f}s)")
             if verbose or rc != 0:
                 lines = output.rstrip("\n").splitlines()
-                shown = lines if verbose else lines[-tail:]
+                shown = lines if verbose or tail <= 0 else lines[-tail:]
                 for line in shown:
                     print(f"    {line}")
             if rc != 0:
@@ -737,6 +741,31 @@ def self_test() -> int:
                 EXIT_UNTRUSTED,
             ),
             (
+                "a list-valued job-level env is refused, not rendered as Python",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    env:\n"
+                "      ITEMS: [a, b]\n    steps:\n      - name: l\n"
+                "        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a mapping-valued workflow-level env is refused",
+                "on: push\nenv:\n  CFG: {a: 1}\njobs:\n  gate:\n    runs-on: x\n"
+                "    steps:\n      - name: m\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a null env value reaches the step empty, as on GitHub",
+                head + "      - name: n\n        env:\n          EMPTY:\n"
+                '        run: test "x$EMPTY" = x\n',
+                0,
+            ),
+            (
+                "a uses: step is listed and counted, never replayed",
+                head + "      - uses: actions/checkout@v6\n"
+                "      - name: r\n        run: echo x\n",
+                0,
+            ),
+            (
                 "a null steps: is refused, not a traceback",
                 "on: push\njobs:\n  gate:\n    runs-on: x\n    steps:\n",
                 EXIT_UNTRUSTED,
@@ -808,6 +837,12 @@ def self_test() -> int:
             "a GITHUB_ENV multi-line write with an empty delimiter is refused": (
                 "empty delimiter"
             ),
+            # A uses: step silently dropped rather than counted would
+            # still exit 0; the count in the verdict line is the claim
+            # (round 8: the branch had never run under the battery).
+            "a uses: step is listed and counted, never replayed": (
+                "1 uses-steps not replayed"
+            ),
         }
         failed = 0
         # The VIRTUAL_ENV case is vacuous unless the parent carries
@@ -872,7 +907,12 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument("--list", action="store_true", help="show jobs and steps")
     ap.add_argument("--keep-going", action="store_true")
-    ap.add_argument("--tail", type=int, default=60)
+    ap.add_argument(
+        "--tail",
+        type=int,
+        default=0,
+        help="show only the last N lines of a failing step (default: all)",
+    )
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
