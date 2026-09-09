@@ -79,7 +79,11 @@ not crash: `$GITHUB_ENV` (`NAME=value` and `NAME<<DELIM` forms) and
 `$GITHUB_PATH` (one directory per line, prepended) are applied to the
 following steps as the runner applies them; `$GITHUB_OUTPUT` and
 `$GITHUB_STEP_SUMMARY` exist and are discarded, since outputs cross
-jobs and summaries reach nobody here. Round 5 measured a step writing
+jobs and summaries reach nobody here. A `NAME<<DELIM` write whose
+closing line never arrives, or whose delimiter is empty, is refused
+after the step that wrote it: either would end the value somewhere
+nobody chose (round 6 measured the swallow to end of file, round 7
+the truncation at the first blank line). Round 5 measured a step writing
 `$GITHUB_ENV` failing with "No such file or directory": a false red.
 A SIGKILL of this process leaves the step's temporary script on disk
 and the step's process group running, because nothing can run after
@@ -376,6 +380,16 @@ def apply_github_env(path: Path, env: dict[str, str]) -> None:
             continue
         head, sep, rest = line.partition("<<")
         if sep and "=" not in head:
+            if not rest.strip():
+                # An empty delimiter would close on the value's first
+                # blank line and truncate it silently; round 7 measured
+                # the truncation. Refuse it like a delimiter that never
+                # arrives: the value is equally untrustworthy.
+                path.write_text("", encoding="utf-8")
+                raise ValueError(
+                    f"$GITHUB_ENV: {head.strip()}<< was opened with an empty "
+                    "delimiter, so no line could close it on purpose"
+                )
             body: list[str] = []
             closed = False
             while i < len(lines):
@@ -770,6 +784,14 @@ def self_test() -> int:
                 EXIT_UNTRUSTED,
             ),
             (
+                "a GITHUB_ENV multi-line write with an empty delimiter is refused",
+                head + "      - name: w\n        run: |\n"
+                "          printf 'MSG<<\\nline one\\n\\nline two\\nEOF\\n'"
+                ' >> "$GITHUB_ENV"\n'
+                "      - name: r\n        run: echo unreachable\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
                 "the parent's VIRTUAL_ENV does not reach a step",
                 head + '      - name: venv\n        run: test -z "${VIRTUAL_ENV:-}"\n',
                 0,
@@ -782,6 +804,9 @@ def self_test() -> int:
             "a job that calls a reusable workflow is refused": "reusable workflow",
             "a GITHUB_ENV multi-line write with no closing delimiter is refused": (
                 "never arrived"
+            ),
+            "a GITHUB_ENV multi-line write with an empty delimiter is refused": (
+                "empty delimiter"
             ),
         }
         failed = 0
