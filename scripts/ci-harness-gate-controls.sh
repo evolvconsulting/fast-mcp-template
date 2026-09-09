@@ -47,6 +47,13 @@ cp "$REPO/scripts/ci-harness-gate.sh" "$WORK/scripts/"
 # machinery was entirely absent - the switched-off-vs-broken shape, inside the
 # controls written to prevent it. The stubs below now source the same file.
 cp -R "$REPO/scripts/lib" "$WORK/scripts/"
+# AND docs/reviews/lib, WHICH THE GATE ALSO SOURCES. Without it the
+# gate's MISSING LIB guard fires on every stub-harness row here and
+# this self-test went 28/28 to 2/28, measured. The sandbox has to
+# carry every library the subject sources, not just the one it was
+# written against.
+mkdir -p "$WORK/docs/reviews"
+cp -R "$REPO/docs/reviews/lib" "$WORK/docs/reviews/"
 
 FIRED=0
 TOTAL=0

@@ -604,6 +604,28 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "is sourced by harnesses, not invoked by a CI step, so it "
         "becomes wired through its caller."
     ),
+    "harness-state.sh": (
+        "the shell library that derives the run-state file's path "
+        "and format, so a harness killed by SIGKILL can be "
+        "recovered. Sourced by scripts/ci-harness-gate.sh, never "
+        "run by a step - it becomes wired when that gate is. IT "
+        "JOINS THIS CONTAINER, and the commit that carried it "
+        "claimed otherwise: the container is git ls-files over "
+        "docs/reviews and scripts, which is RECURSIVE, and "
+        "scripts/lib/harness-result.sh below is the standing proof. "
+        "That claim was measured while the file was still "
+        "UNTRACKED, so git ls-files could not see it and the count "
+        "read 52 instead of 53."
+    ),
+    "restore-stranded-mutation.sh": (
+        "the RECOVERY half of the state mechanism, carried from "
+        "fast-mcp-jobvite in the same commit as the library whose "
+        "own header names it. It reads a state file left by a "
+        "harness that died before restoring, and puts the mutation "
+        "back. TURN ON never as a gate step: it is a repair tool a "
+        "human runs after a kill, and a gate that repairs the tree "
+        "underneath a failing run destroys the evidence."
+    ),
     "harness-result.sh": (
         "the shell library that PRINTS the canonical HARNESS-RESULT "
         "line. Sourced by a harness, never run by a step - it "
