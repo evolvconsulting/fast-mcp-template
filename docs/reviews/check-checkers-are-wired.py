@@ -255,9 +255,17 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     ),
     "check-brief-report-references.py": (
         "TURN ON when docs/briefs/ holds real briefs. It refuses a "
-        "brief that cites a report nobody committed; over the "
-        "PREAMBLE shape alone it would parse zero briefs, and a "
-        "checker over an empty population reports full coverage."
+        "brief that cites a report nobody committed. THE OLD REASON "
+        "SAID IT 'would parse zero briefs, and a checker over an "
+        "empty population reports full coverage'; MEASURED "
+        "2026-09-09 that is FALSE in both halves. It parses ONE "
+        "brief, PREAMBLE.md, and prints 'Briefs scanned: 1' at exit "
+        "0. The population is not empty and there is no empty-"
+        "population refusal to reach. What makes it vacuous here is "
+        "one level down: that brief cites ZERO reports, so there is "
+        "nothing for the check to resolve and a green says only that "
+        "nobody cited anything. Wire it when a brief in this "
+        "repository actually names a report."
     ),
     "check-brief-report-refs-controls.sh": (
         "the controls for the checker one row up; wire it in the "
@@ -441,7 +449,18 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "so it can only be honest looking FORWARD; wiring it before "
         "that baseline exists makes it red by construction. Wire it "
         "on the day you decide to hold the line from, and say which "
-        "day that is."
+        "day that is. AND ITS `--self-test` CANNOT RUN HERE, which "
+        "this reason did not say until 2026-09-09: POSITIVE_MERGE "
+        "and NEGATIVE_MERGE are two fast-mcp-jobvite merge commits, "
+        "and the arm dies with 'POSITIVE CONTROL ERROR: git rev-list "
+        "--parents -n 1 73dd717 failed rc=128: fatal: ambiguous "
+        "argument'. It is the same foreign-constant shape the "
+        "coverage checker carried, in a second file. It cannot be "
+        "fixed by editing a constant: this repository has no merge "
+        "with invented content to point the control at. Bare, with "
+        "no argument, the checker prints usage and exits 2, which "
+        "looks like an ordinary argument refusal and is why running "
+        "each member once hid this."
     ),
     "check-review-coverage.py": (
         "DELIBERATELY UNWIRED, reason carried intact. It reports "
@@ -475,11 +494,18 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "job's whole budget."
     ),
     "check-secrets-baseline.py": (
-        "TURN ON once `.secrets.baseline` is regenerated for THIS "
-        "project. The carried baseline is the previous project's "
-        "and would audit the wrong tree. Note the trap it was "
-        "written against: the scan hook REWRITES the baseline it "
-        "then fails on."
+        "TURN ON once `.secrets.baseline` is GENERATED for this "
+        "project. THE OLD REASON SAID 'the carried baseline is the "
+        "previous project's and would audit the wrong tree', which "
+        "reads as though a baseline is sitting here to be replaced. "
+        "MEASURED 2026-09-09: there is none. No `.secrets.baseline` "
+        "is tracked and none is on disk, and the checker says so and "
+        "exits 2, 'no baseline at <repo>/.secrets.baseline - nothing "
+        "to compare against'. The extraction dropped it rather than "
+        "carrying it, which is the safer of the two and the opposite "
+        "of what this row implied. Note the trap it was written "
+        "against, which still applies the day you make one: the scan "
+        "hook REWRITES the baseline it then fails on."
     ),
     "check-timeout-literals.py": (
         "TURN ON once timeouts live in one place. It refuses an "
