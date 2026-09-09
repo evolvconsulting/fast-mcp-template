@@ -499,7 +499,7 @@ Built-ins (modules confirmed present at `fastmcp/server/middleware/` `[FROM SOUR
 | `StructuredLoggingMiddleware` | ✅ safe — keep `include_payloads=False` (payloads are candidate PII) |
 | `TimingMiddleware` | ✅ safe |
 | `ResponseCachingMiddleware` | ✅ safe; tool-call caching is **opt-in** via `call_tool_settings` |
-| `RetryMiddleware` | ⛔ **cannot exclude a tool** — no `tools=` parameter, hooks `on_request`, and it duplicated a non-idempotent write 4x in one call. Put retries in the Jobvite client instead **[FASTMCP-SPIKE-4.md §13.3]** |
+| `RetryMiddleware` | ⛔ **cannot exclude a tool** — no `tools=` parameter, hooks `on_request`, and it duplicated a non-idempotent write 4x in one call. Put retries in your own upstream client instead **[FASTMCP-SPIKE-4.md §13.3]** |
 | `RateLimitingMiddleware` | ✅ **adopt for D4**, with: explicit `get_client_id` (default keys everyone to `"global"`), burst sized `calls + 2`, restart-to-reconfigure (attribute mutation has no effect), and refusals arriving as raised `MCPError`s not problem objects **[FASTMCP-SPIKE-4.md §14.1]** |
 | `ErrorHandlingMiddleware` | ⛔ **default `transform_errors=True` breaks the `ToolError` contract** — turns tool failures into raised `MCPError`s and relabels `ToolError` as "Internal error". Only usable with `transform_errors=False` |
 | `ResponseLimitingMiddleware` | ⛔ **BROKEN** — truncation drops `structured_content` while the `outputSchema` remains, so the client raises. Cap sizes inside the tool instead |
@@ -722,8 +722,8 @@ A PyPI-flavoured example, adapted from the docs' own PyPI sample (`.../docs/mode
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.evolvconsulting/fast-mcp-template",
-  "title": "Jobvite",
-  "description": "MCP server for the Jobvite ATS REST API",
+  "title": "TODO: name your server",
+  "description": "TODO: one line saying what this server is for",
   "version": "0.1.0",
   "repository": {
     "url": "https://github.com/evolvconsulting/fast-mcp-template",
@@ -738,8 +738,8 @@ A PyPI-flavoured example, adapted from the docs' own PyPI sample (`.../docs/mode
       "transport": { "type": "stdio" },
       "environmentVariables": [
         {
-          "name": "JOBVITE_API_KEY",
-          "description": "Jobvite API key",
+          "name": "TODO_UPSTREAM_API_KEY",
+          "description": "TODO: your upstream credential",
           "isRequired": true,
           "isSecret": true
         }

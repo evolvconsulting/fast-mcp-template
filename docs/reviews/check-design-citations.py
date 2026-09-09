@@ -344,11 +344,26 @@ def controls() -> int:
 
 
 def main(argv: list[str]) -> int:
-    if "--controls" in argv:
-        return controls()
-    if "--since" in argv:
-        return _report_moves(argv[argv.index("--since") + 1])
-    return _report_bounds(len(DESIGN.read_text().splitlines()))
+    # A BROKEN REGISTER IS A BROKEN INSTRUMENT, NOT A FINDING, and the
+    # two must not share an exit code. That is the rule `_report_moves`
+    # already states one function up for a missing git object, and this
+    # file was not applying it to its own register: a missing or
+    # malformed REPOINT-EXEMPT.txt let `RegisterError` escape as a raw
+    # traceback and exit 1, which is the code that means "a citation
+    # does not resolve". A reader would have read a broken instrument as
+    # a finding. Exit 3 is this repository's BROKEN INSTRUMENT code, in
+    # nine checkers including this one; `repoint_exempt.main`'s own 2 is
+    # the odd one out and is not the convention followed here.
+    try:
+        if "--controls" in argv:
+            return controls()
+        if "--since" in argv:
+            return _report_moves(argv[argv.index("--since") + 1])
+        return _report_bounds(len(DESIGN.read_text().splitlines()))
+    except repoint_exempt.RegisterError as exc:
+        print(f"BROKEN REGISTER: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
 
 
 if __name__ == "__main__":

@@ -267,6 +267,23 @@ def frozen_sha() -> str:
 
 
 def main() -> int:
+    """Run the scan, and separate a broken register from a finding.
+
+    A missing or malformed `docs/reviews/REPOINT-EXEMPT.txt` used to
+    escape `_scan` as a raw traceback and exit 1, which is the code
+    this checker uses for "a citation cannot be its subject". Exit 3
+    is the BROKEN INSTRUMENT code its sibling already uses for a
+    missing git object, and it is the one a reader can act on.
+    """
+    try:
+        return _scan()
+    except repoint_exempt.RegisterError as exc:
+        print(f"BROKEN REGISTER: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
+
+
+def _scan() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha", default=frozen_sha(), help="the frozen DESIGN.md")
     parser.add_argument(
