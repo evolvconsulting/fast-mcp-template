@@ -95,8 +95,10 @@ WHAT IT IS NOT. It is not a checker and must never be wired into CI:
 CI running a replay of itself proves nothing. It is excused in
 `docs/reviews/check-checkers-are-wired.py` for that reason, like
 `refreeze.sh`. It also does not reproduce the runner's environment
-(`CI=true`, the ubuntu image, secrets); a step that depends on those
-fails here and says so, which is information.
+(`CI=true`, the ubuntu image, secrets); a step that asserts on one
+of those fails here and says so, which is information, but a step
+that merely branches on one takes the local branch silently, so a
+`run:` that reads a runner variable is the adopter's to read by hand.
 
 Exit 0 = every replayed step exited 0. Otherwise the first failing
 step's exit code (or the last one with --keep-going). Exit 2 = the
@@ -107,6 +109,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import os
 import re
 import shutil
@@ -374,10 +377,22 @@ def apply_github_env(path: Path, env: dict[str, str]) -> None:
         head, sep, rest = line.partition("<<")
         if sep and "=" not in head:
             body: list[str] = []
-            while i < len(lines) and lines[i] != rest:
+            closed = False
+            while i < len(lines):
+                if lines[i] == rest:
+                    closed = True
+                    i += 1
+                    break
                 body.append(lines[i])
                 i += 1
-            i += 1
+            if not closed:
+                # Refuse rather than swallow the rest of the file into
+                # one value; round 6 measured the swallow.
+                path.write_text("", encoding="utf-8")
+                raise ValueError(
+                    f"$GITHUB_ENV: {head.strip()}<<{rest} was opened and the "
+                    f"closing {rest!r} line never arrived"
+                )
             env[head.strip()] = "\n".join(body)
             continue
         name, eq, value = line.partition("=")
@@ -482,7 +497,11 @@ def replay(
                 return EXIT_UNTRUSTED
             cwd = root / declared_workdir(doc, spec, step)
             rc, output, seconds = run_step(shell, script, env, cwd)
-            apply_github_env(runner_files["GITHUB_ENV"], base_env)
+            try:
+                apply_github_env(runner_files["GITHUB_ENV"], base_env)
+            except ValueError as exc:
+                print(f"REFUSED after step {i} ({name}): {exc}")
+                return EXIT_UNTRUSTED
             apply_github_path(runner_files["GITHUB_PATH"], base_env)
             replayed += 1
             print(f"STEP {i}/{total} {name}: rc={rc} ({seconds:.1f}s)")
@@ -744,11 +763,27 @@ def self_test() -> int:
                 EXIT_UNTRUSTED,
             ),
             (
+                "a GITHUB_ENV multi-line write with no closing delimiter is refused",
+                head + "      - name: w\n        run: |\n"
+                "          printf 'MSG<<NEVER\\nline one\\n' >> \"$GITHUB_ENV\"\n"
+                "      - name: r\n        run: echo unreachable\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
                 "the parent's VIRTUAL_ENV does not reach a step",
                 head + '      - name: venv\n        run: test -z "${VIRTUAL_ENV:-}"\n',
                 0,
             ),
         ]
+        # A refusal that shares its exit code with an older one is
+        # proven by the text it prints, not by the code (round 6: the
+        # reusable-workflow case was masked by the zero-steps refusal).
+        expect_text = {
+            "a job that calls a reusable workflow is refused": "reusable workflow",
+            "a GITHUB_ENV multi-line write with no closing delimiter is refused": (
+                "never arrived"
+            ),
+        }
         failed = 0
         # The VIRTUAL_ENV case is vacuous unless the parent carries
         # one, so the whole battery runs with one set; no other case
@@ -759,16 +794,22 @@ def self_test() -> int:
             for label, jobs, expected in cases:
                 write(jobs)
                 got: int | str
+                printed = io.StringIO()
                 try:
-                    got = replay(wf, "gate", root=root, resolvers=fake, tail=5)
+                    with contextlib.redirect_stdout(printed):
+                        got = replay(wf, "gate", root=root, resolvers=fake, tail=5)
                 except Exception as exc:
                     # Round 2 amputated a refusal and the whole battery
                     # died at case 12 of 22 with a traceback; the nine
                     # cases behind it never ran. A crash is one FAIL.
                     got = f"{type(exc).__name__}: {exc}"
-                ok = got == expected
+                need = expect_text.get(label)
+                said = need is None or need in printed.getvalue()
+                ok = got == expected and said
                 mark = "ok  " if ok else "FAIL"
                 print(f"{mark} {label}: expected {expected}, got {got}")
+                if not said:
+                    print(f"     ... and the output never said {need!r}")
                 failed += 0 if ok else 1
         finally:
             if saved is None:
