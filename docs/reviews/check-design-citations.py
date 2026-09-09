@@ -355,13 +355,25 @@ def main(argv: list[str]) -> int:
     #
     # EXIT 3 IS THE MAJORITY CONVENTION HERE, and no digit says how big
     # the majority is. This comment said "nine checkers" and was wrong
-    # twice over. A review counted EIGHT by excluding the
-    # `-controls.sh` harnesses; a plain search over the container
-    # returns SEVENTEEN by including them; and nothing in this
-    # repository defines which of those two populations the word
-    # "checker" names. A count whose partition is undefined is not a
-    # fact about the tree, it is a fact about the counter, and this
-    # branch has now deleted three such digits for the same reason.
+    # twice over. A review counted EIGHT by reading each file and
+    # setting aside the ones that are a CONTROL for another checker;
+    # a plain search over the container returns SEVENTEEN by counting
+    # them all; and nothing in this repository defines which of those
+    # two populations the word "checker" names. A count whose
+    # partition is undefined is not a fact about the tree, it is a
+    # fact about the counter, and this branch has now deleted three
+    # such digits for the same reason.
+    #
+    # THE PARTITION IS BY CONTENT, AND A FILENAME FILTER PROVABLY
+    # FAILS IT. This comment first said EIGHT was reached "by
+    # excluding the `-controls.sh` harnesses". Applied literally that
+    # rule yields TEN, because `check-row-floor-control.sh` calls
+    # itself a POSITIVE CONTROL in its own first line and carries a
+    # real `exit 3`, while its name is singular and misses the plural
+    # suffix; a sibling one character longer, `-controls.sh`, is a
+    # different file. A rule stated as a name pattern is blind to the
+    # member whose name nobody matched, which is the defect this
+    # sentence was already about, one column over.
     #
     # The same sentence also called `repoint_exempt.main`'s exit 2 "the
     # odd one out". It is not the only one:

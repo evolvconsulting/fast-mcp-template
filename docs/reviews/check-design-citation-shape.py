@@ -270,10 +270,20 @@ def main() -> int:
     """Run the scan, and separate a broken register from a finding.
 
     A missing or malformed `docs/reviews/REPOINT-EXEMPT.txt` used to
-    escape `_scan` as a raw traceback and exit 1, which is the code
-    this checker uses for "a citation cannot be its subject". Exit 3
-    is the BROKEN INSTRUMENT code its sibling already uses for a
-    missing git object, and it is the one a reader can act on.
+    let `RegisterError` escape this file's entry point as a raw
+    traceback and exit 1, which is the code this checker uses for "a
+    citation cannot be its subject". Exit 3 is the BROKEN INSTRUMENT
+    code its sibling already uses for a missing git object, and it is
+    the one a reader can act on.
+
+    THE ENTRY POINT IS NAMED BY ITS ROLE HERE AND NOT BY ITS
+    IDENTIFIER, because the commit that added this docstring also
+    carved `_scan` out of the old `main()`. The first version of this
+    sentence said the traceback "used to escape `_scan`", and `_scan`
+    did not exist when that was true. A historical claim written in
+    the names of the present cannot decay, because it was never true;
+    it is the one shape a sweep against HEAD can never catch, since
+    every identifier in it resolves.
     """
     try:
         return _scan()
