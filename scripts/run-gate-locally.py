@@ -58,8 +58,10 @@ not exist (the step's own, or `defaults.run.working-directory` at
 the job or workflow scope, which is honoured the way `shell:` is); a
 job with `container:` or `services:`, because a replay on this host
 would substitute its own toolchain for the declared image and start
-no service; an unknown job; a job whose `steps:` is empty or null;
-and a job that would replay ZERO run steps.
+no service; a job with `strategy:`, because a single replay is one
+cell of the matrix and would call the rest covered; an `env:` or
+`run:` value that is a list or a mapping; an unknown job; a job whose
+`steps:` is empty or null; and a job that would replay ZERO run steps.
 A replay that silently skipped or
 softened a step would be a green that tested nothing, which is the
 defect this whole repository is built to refuse. `uses:` steps
@@ -71,12 +73,15 @@ which only makes a local replay more patient than CI; it cannot
 manufacture a pass. `needs:` and `outputs:` between jobs are not
 modelled: one job is replayed at a time, and an expression that reads
 another job's output is refused as unresolvable rather than guessed.
-A SIGKILL of this process (not Ctrl-C, which `subprocess.run` turns
-into a kill of the child) leaves the step's temporary script on disk
-and the step's own children running, because nothing can run after
-SIGKILL; every other exit path removes the file. YAML scalars that
-are not strings reach a step as GitHub renders them: booleans
-lowercase, null as empty, other scalars as str() prints them.
+A SIGKILL of this process leaves the step's temporary script on disk
+and the step's process group running, because nothing can run after
+SIGKILL. On Ctrl-C the step runs in its own process group and the
+whole group is killed, grandchildren included, and the file removed;
+round 4 measured a shell's `sleep` outliving a kill of the shell
+alone. YAML scalars that are not strings reach a step as GitHub
+renders them: booleans lowercase, null as empty, other scalars as
+str() prints them; a list or a mapping as an env: or run: value is
+refused, since GitHub's schema has no rendering for one.
 
 WHAT IT IS NOT. It is not a checker and must never be wired into CI:
 CI running a replay of itself proves nothing. It is excused in
@@ -93,8 +98,10 @@ replay itself could not be trusted.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -243,8 +250,15 @@ def refusals(
     for key in ("container", "services"):
         if key in spec:
             out.append(f"the job declares {key}:, which this host cannot honour")
+    if "strategy" in spec:
+        out.append("the job declares strategy:, which a one-cell replay cannot honour")
     for scope, block in (("workflow", doc.get("env")), ("job", spec.get("env"))):
         for key, value in (block or {}).items():
+            if isinstance(value, (list, dict)):
+                out.append(
+                    f"{scope} env {key} is a {type(value).__name__}, not a scalar"
+                )
+                continue
             for expr in unresolvable(gh_text(value), resolvers):
                 out.append(
                     f"{scope} env {key} carries an unresolvable expression: {expr}"
@@ -255,9 +269,18 @@ def refusals(
         if "run" not in step:
             continue
         run_steps += 1
+        if isinstance(step["run"], (list, dict)):
+            out.append(f"step {i} ({name}) run: is not a scalar")
+            continue
         for expr in unresolvable(gh_text(step["run"]), resolvers):
             out.append(f"step {i} ({name}) run: unresolvable expression: {expr}")
         for key, value in (step.get("env") or {}).items():
+            if isinstance(value, (list, dict)):
+                out.append(
+                    f"step {i} ({name}) env {key} is a {type(value).__name__}, "
+                    "not a scalar"
+                )
+                continue
             for expr in unresolvable(gh_text(value), resolvers):
                 out.append(
                     f"step {i} ({name}) env {key} carries an unresolvable "
@@ -294,17 +317,30 @@ def run_step(
         handle.write(script)
         path = handle.name
     try:
-        done = subprocess.run(  # noqa: S603 - argv list, no shell=True
+        proc = subprocess.Popen(  # noqa: S603 - argv list, no shell=True
             [*shell, path],
             cwd=cwd,
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = proc.communicate()
+        except BaseException:
+            # Ctrl-C reaches this process. Kill the step's whole
+            # process group, not only the shell: round 4 measured a
+            # `sleep` the shell had spawned reparented to PID 1 when
+            # the shell alone was killed.
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            raise
+        rc = proc.wait()
     finally:
         os.unlink(path)
-    return done.returncode, done.stdout + done.stderr, time.monotonic() - start
+    return rc, stdout + stderr, time.monotonic() - start
 
 
 def replay(
@@ -587,6 +623,19 @@ def self_test() -> int:
                 "on: push\njobs:\n  gate:\n    runs-on: x\n    services:\n"
                 "      db:\n        image: postgres:16\n"
                 "    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a job with strategy: is refused",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    strategy:\n"
+                "      matrix:\n        py: ['3.12', '3.13']\n"
+                "    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a list-valued env is refused, not rendered as Python",
+                head + "      - name: l\n        env:\n          ITEMS: [a, b]\n"
+                "        run: echo x\n",
                 EXIT_UNTRUSTED,
             ),
             (
