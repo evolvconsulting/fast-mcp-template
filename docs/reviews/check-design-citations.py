@@ -67,7 +67,9 @@ Exit 0 when every citation resolves, 1 otherwise. No dependencies.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
+import io
 import pathlib
 import re
 import subprocess
@@ -77,6 +79,7 @@ import repoint_exempt
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DESIGN = REPO_ROOT / "docs" / "DESIGN.md"
+FREEZE = REPO_ROOT / "docs" / "DESIGN-FREEZE.txt"
 
 # Examples, REPOINT-EXEMPT: `DESIGN.md:603`, `DESIGN.md:918-924` - these
 # are what the pattern MATCHES, not citations of anything, so they must
@@ -129,6 +132,16 @@ EXEMPT_MARKER = repoint_exempt.MARKER
 #: citation at all, so the number that was supposed to make the
 #: exemption visible was mostly counting prose about the exemption.
 EXEMPT_SKIPPED = 0
+
+#: BOTH scan arms print this and exit non-zero on an empty corpus.
+#: An empty corpus is a BROKEN SELECTOR and never a clean tree. It
+#: is a constant so `--controls` can assert this exact string: a
+#: control that accepted any non-zero would also pass on a shallow
+#: checkout's exit 3, which is a different failure entirely.
+EMPTY_CORPUS = (
+    "SELECTOR CONTROL: no DESIGN.md citations found anywhere. The "
+    "pattern is broken, not the corpus."
+)
 
 
 def citations() -> list[tuple[pathlib.Path, int, int, int]]:
@@ -185,10 +198,7 @@ def line_map(old_text: str, new_text: str) -> dict[int, int | None]:
 def _report_bounds(total_lines: int) -> int:
     found = citations()
     if not found:
-        print(
-            "SELECTOR CONTROL: no DESIGN.md citations found anywhere. The "
-            "pattern is broken, not the corpus."
-        )
+        print(EMPTY_CORPUS)
         return 1
 
     bad = [
@@ -273,6 +283,31 @@ def _report_moves(sha: str) -> int:
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
         return 3
     old = done.stdout
+    # AN EMPTY CORPUS IS A BROKEN INSTRUMENT HERE TOO, AND THIS ARM
+    # DID NOT SAY SO. `_report_bounds` has refused one since it was
+    # written; this arm computed `citations()` only at the loop
+    # below, so it could answer 0 moved and exit 0 having read no
+    # file at all. Ported from fast-mcp-jobvite 0d6f930, where the
+    # amputated enumeration printed `0 citation(s) moved` at exit 0
+    # against 1618 moved with it intact.
+    #
+    # HERE THE SAME FAIL-OPEN IS MASKED DIFFERENTLY, and that is
+    # worth writing down because it changes what a reader should
+    # look for. This template's DESIGN.md IS byte-identical to its
+    # freeze, so the short circuit below returned 0 first, and no
+    # amputation was needed to reach a green that had read nothing.
+    # MEASURED 2026-09-09 at 1894b70: `--since $(cat
+    # docs/DESIGN-FREEZE.txt)` printed `DESIGN.md is byte-identical`
+    # and exited 0 with the enumeration intact AND amputated.
+    #
+    # POSITION IS LOAD-BEARING. Below the `git show`, so a shallow
+    # checkout still gets its own message and its own exit 3; above
+    # the byte-identical short circuit, which answers `no citation
+    # can have moved` without ever asking whether there are any.
+    found = citations()
+    if not found:
+        print(EMPTY_CORPUS)
+        return 1
     new = DESIGN.read_text()
     if old == new:
         print(f"DESIGN.md is byte-identical to {sha}. No citation can have moved.")
@@ -281,7 +316,7 @@ def _report_moves(sha: str) -> int:
     mapping = line_map(old, new)
     moved: list[str] = []
     broken: list[str] = []
-    for path, lineno, start, end in citations():
+    for path, lineno, start, end in found:
         new_start, new_end = mapping.get(start), mapping.get(end)
         rel = path.relative_to(REPO_ROOT)
         cited = f"DESIGN.md:{start}" + (f"-{end}" if end != start else "")
@@ -338,6 +373,71 @@ def controls() -> int:
         print("  CONTROL the pattern reads both forms -> FIRED")
     else:
         print("  CONTROL the pattern reads both forms -> DID NOT FIRE")
+
+    # THE THREE CONTROLS ABOVE NEVER TOUCH THE CORPUS. They exercise
+    # the pattern and the line map against hardcoded strings, so with
+    # `_tracked_files()` returning nothing this arm still printed
+    # `3/3 controls fired.` at exit 0 while the real scan had no file
+    # to read. Board row 23. MEASURED 2026-09-09 on THIS repository,
+    # same amputation on both checkers: this arm did not move at all,
+    # and the sibling `check-design-citation-shape.py --controls`
+    # went 7/7 exit 0 to 6/7 exit 1. A controls arm blind to its own
+    # population certifies a checker that is scanning nothing.
+    total += 1
+    tracked = _tracked_files()
+    here = pathlib.Path(__file__).resolve()
+    if tracked and here in tracked:
+        fired += 1
+        print(f"  CONTROL the corpus is enumerated ({len(tracked)} files) -> FIRED")
+    else:
+        print(
+            f"  CONTROL the corpus is enumerated -> DID NOT FIRE "
+            f"({len(tracked)} file(s), this checker "
+            f"{'present' if here in tracked else 'MISSING'})"
+        )
+
+    # AND THE SECOND ARM, on the refusal itself. Ported from
+    # fast-mcp-jobvite 0d6f930, and WHAT IT PROVES IS NOT THE SAME
+    # HERE, which is worth writing down rather than leaving for a
+    # reader to assume.
+    #
+    # THERE it is an amputation test: that repository has a live
+    # corpus, so the refusal appears ONLY once the enumeration is
+    # amputated. HERE every remaining citation is exempt and the
+    # corpus is empty by design, so both arms refuse with the
+    # enumeration INTACT - MEASURED 2026-09-09 at 1894b70. The
+    # amputation below therefore changes nothing in this repository,
+    # and this arm is NOT the population control; the arm above is,
+    # and it is the one that moves (5/5 to 4/5, measured).
+    #
+    # WHAT IT DOES PROVE HERE is that BOTH scan arms refuse and use
+    # the SAME WORDS. That is a live assertion, not a tautology: at
+    # 1894b70 `--since $(cat docs/DESIGN-FREEZE.txt)` printed
+    # `DESIGN.md is byte-identical` and returned 0, having read no
+    # citation at all, and this arm goes 5/5 to 4/5 if that refusal
+    # is taken out again. The amputation is kept so the two copies
+    # stay one file, and so the arm becomes an amputation test on
+    # the day an adopter has a corpus of their own.
+    total += 1
+    real = globals()["_tracked_files"]
+    globals()["_tracked_files"] = list  # `list()` IS the empty enumeration
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            bounds_rc = _report_bounds(len(text.splitlines()))
+            moves_rc = _report_moves(FREEZE.read_text(encoding="utf-8").strip())
+    finally:
+        globals()["_tracked_files"] = real
+    said = buf.getvalue().count(EMPTY_CORPUS)
+    if (bounds_rc, moves_rc, said) == (1, 1, 2):
+        fired += 1
+        print("  CONTROL both scan arms refuse an empty corpus -> FIRED")
+    else:
+        print(
+            f"  CONTROL both scan arms refuse an empty corpus -> "
+            f"DID NOT FIRE (bounds rc={bounds_rc}, --since rc={moves_rc}, "
+            f"{said} of 2 refusals printed)"
+        )
 
     print(f"\n{fired}/{total} controls fired.")
     return 0 if fired == total else 1
