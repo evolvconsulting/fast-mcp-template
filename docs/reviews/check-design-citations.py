@@ -418,20 +418,35 @@ def controls() -> int:
     # stay one file, and so the arm becomes an amputation test on
     # the day an adopter has a corpus of their own.
     total += 1
-    real = globals()["_tracked_files"]
-    globals()["_tracked_files"] = list  # `list()` IS the empty enumeration
-    buf = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(buf):
-            bounds_rc = _report_bounds(len(text.splitlines()))
-            moves_rc = _report_moves(FREEZE.read_text(encoding="utf-8").strip())
-    finally:
-        globals()["_tracked_files"] = real
-    said = buf.getvalue().count(EMPTY_CORPUS)
+    # THIS ARM READS A FILE, AND A MISSING FILE MUST NOT BE A TRACEBACK.
+    # `--since` needs a sha and the frozen one is the only sha this arm
+    # can get without retyping a commit. MEASURED: without this guard,
+    # deleting docs/DESIGN-FREEZE.txt made `--controls` die with an
+    # unhandled FileNotFoundError at exit 1 - and 1 is this checker's
+    # code for "a citation does not resolve", so a broken instrument
+    # was wearing a finding's exit code. That is the distinction
+    # `main()` already draws for a broken register, applied here.
+    bounds_rc = moves_rc = said = -1
+    if not FREEZE.exists():
+        print(
+            f"  CONTROL both scan arms refuse an empty corpus -> DID NOT "
+            f"FIRE ({FREEZE.name} is missing, so --since has no sha)"
+        )
+    else:
+        real = globals()["_tracked_files"]
+        globals()["_tracked_files"] = list  # `list()` IS the empty enumeration
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                bounds_rc = _report_bounds(len(text.splitlines()))
+                moves_rc = _report_moves(FREEZE.read_text(encoding="utf-8").strip())
+        finally:
+            globals()["_tracked_files"] = real
+        said = buf.getvalue().count(EMPTY_CORPUS)
     if (bounds_rc, moves_rc, said) == (1, 1, 2):
         fired += 1
         print("  CONTROL both scan arms refuse an empty corpus -> FIRED")
-    else:
+    elif FREEZE.exists():
         print(
             f"  CONTROL both scan arms refuse an empty corpus -> "
             f"DID NOT FIRE (bounds rc={bounds_rc}, --since rc={moves_rc}, "
