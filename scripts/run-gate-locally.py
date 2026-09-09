@@ -8,7 +8,8 @@
     uv run --frozen python scripts/run-gate-locally.py --self-test
 
 The first form replays the `gate` job; `--job` picks another; `--root`
-replays a worktree; `--list` prints every job with its steps;
+replays a worktree; `--list` prints every job with its steps, or
+the one named by `--job`;
 `--self-test` plants failures and requires detection.
 
 WHY THIS EXISTS. A gate run without CI's flags is a different, weaker
@@ -53,16 +54,29 @@ past its own condition is a green nobody asked for); a shell other
 than the default or `bash`; a step with `continue-on-error:`, because
 honouring it would need the replay to keep going past a red step and
 refusing is the honest cheap option; a `working-directory` that does
-not exist; an unknown job; and a job that would replay ZERO run steps.
+not exist (the step's own, or `defaults.run.working-directory` at
+the job or workflow scope, which is honoured the way `shell:` is); a
+job with `container:` or `services:`, because a replay on this host
+would substitute its own toolchain for the declared image and start
+no service; an unknown job; a job whose `steps:` is empty or null;
+and a job that would replay ZERO run steps.
 A replay that silently skipped or
 softened a step would be a green that tested nothing, which is the
 defect this whole repository is built to refuse. `uses:` steps
 (checkout, setup-uv) are environment, not checks; they are listed as
 not replayed and counted, never skipped silently.
 
-KNOWN GAP, stated rather than hidden: `timeout-minutes:` is ignored.
-That only makes a local replay more patient than CI; it cannot
-manufacture a pass.
+KNOWN GAPS, stated rather than hidden. `timeout-minutes:` is ignored,
+which only makes a local replay more patient than CI; it cannot
+manufacture a pass. `needs:` and `outputs:` between jobs are not
+modelled: one job is replayed at a time, and an expression that reads
+another job's output is refused as unresolvable rather than guessed.
+A SIGKILL of this process (not Ctrl-C, which `subprocess.run` turns
+into a kill of the child) leaves the step's temporary script on disk
+and the step's own children running, because nothing can run after
+SIGKILL; every other exit path removes the file. YAML scalars that
+are not strings reach a step as GitHub renders them: booleans
+lowercase, null as empty, other scalars as str() prints them.
 
 WHAT IT IS NOT. It is not a checker and must never be wired into CI:
 CI running a replay of itself proves nothing. It is excused in
@@ -151,6 +165,20 @@ def resolve(value: str, resolvers: Resolvers) -> str:
     return EXPR.sub(lambda m: resolvers[m.group(1)](), value)
 
 
+def gh_text(value: Any) -> str:
+    """A YAML scalar as GitHub renders it into a step's environment.
+
+    PyYAML gives `true` as Python's True, and str(True) is "True";
+    a step testing `[ "$FLAG" = "true" ]` would then diverge from
+    the runner. Round 3 planted exactly that.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def load_workflow(workflow: Path) -> dict[str, Any]:
     """Parse the workflow file; raise KeyError if it has no jobs."""
     doc: Any = yaml.safe_load(workflow.read_text(encoding="utf-8"))
@@ -183,6 +211,19 @@ def declared_shell(
     return None
 
 
+def declared_workdir(
+    doc: dict[str, Any], spec: dict[str, Any], step: dict[str, Any]
+) -> str:
+    """The `working-directory` in force: step, job, then workflow."""
+    if "working-directory" in step:
+        return str(step["working-directory"])
+    for scope in (spec, doc):
+        run_defaults = (scope.get("defaults") or {}).get("run") or {}
+        if "working-directory" in run_defaults:
+            return str(run_defaults["working-directory"])
+    return "."
+
+
 def shell_for(declared: Any) -> list[str] | None:
     """GitHub's invocation for a declared shell; None if unsupported."""
     if declared is None:
@@ -199,22 +240,25 @@ def refusals(
     out: list[str] = []
     if "if" in spec:
         out.append("the job has an if: condition")
+    for key in ("container", "services"):
+        if key in spec:
+            out.append(f"the job declares {key}:, which this host cannot honour")
     for scope, block in (("workflow", doc.get("env")), ("job", spec.get("env"))):
         for key, value in (block or {}).items():
-            for expr in unresolvable(str(value), resolvers):
+            for expr in unresolvable(gh_text(value), resolvers):
                 out.append(
                     f"{scope} env {key} carries an unresolvable expression: {expr}"
                 )
     run_steps = 0
-    for i, step in enumerate(spec.get("steps", []), start=1):
+    for i, step in enumerate(spec.get("steps") or [], start=1):
         name = step.get("name", f"step {i}")
         if "run" not in step:
             continue
         run_steps += 1
-        for expr in unresolvable(str(step["run"]), resolvers):
+        for expr in unresolvable(gh_text(step["run"]), resolvers):
             out.append(f"step {i} ({name}) run: unresolvable expression: {expr}")
         for key, value in (step.get("env") or {}).items():
-            for expr in unresolvable(str(value), resolvers):
+            for expr in unresolvable(gh_text(value), resolvers):
                 out.append(
                     f"step {i} ({name}) env {key} carries an unresolvable "
                     f"expression: {expr}"
@@ -226,7 +270,7 @@ def refusals(
         declared = declared_shell(doc, spec, step)
         if shell_for(declared) is None:
             out.append(f"step {i} ({name}) declares shell {declared!r}, not bash")
-        cwd = root / str(step.get("working-directory", "."))
+        cwd = root / declared_workdir(doc, spec, step)
         if not cwd.is_dir():
             out.append(f"step {i} ({name}) working-directory {cwd} does not exist")
     if run_steps == 0:
@@ -302,7 +346,7 @@ def replay(
         # until review round 2 planted one and watched it vanish.
         for block in (doc.get("env"), spec.get("env")):
             for key, value in (block or {}).items():
-                base_env[key] = resolve(str(value), resolvers)
+                base_env[key] = resolve(gh_text(value), resolvers)
     except LookupError as exc:
         print(f"REFUSED: {exc}")
         return EXIT_UNTRUSTED
@@ -312,7 +356,7 @@ def replay(
     fd, output_path = tempfile.mkstemp(suffix=".github-output")
     os.close(fd)
     base_env["GITHUB_OUTPUT"] = output_path
-    steps = spec.get("steps", [])
+    steps = spec.get("steps") or []
     total = len(steps)
     worst = 0
     replayed = 0
@@ -328,8 +372,8 @@ def replay(
             env = dict(base_env)
             try:
                 for key, value in (step.get("env") or {}).items():
-                    env[key] = resolve(str(value), resolvers)
-                script = resolve(str(step["run"]), resolvers)
+                    env[key] = resolve(gh_text(value), resolvers)
+                script = resolve(gh_text(step["run"]), resolvers)
             except LookupError as exc:
                 print(f"REFUSED at step {i} ({name}): {exc}")
                 return EXIT_UNTRUSTED
@@ -337,7 +381,7 @@ def replay(
             if shell is None:  # screened by refusals(); kept for the type
                 print(f"REFUSED at step {i} ({name}): unsupported shell")
                 return EXIT_UNTRUSTED
-            cwd = root / str(step.get("working-directory", "."))
+            cwd = root / declared_workdir(doc, spec, step)
             rc, output, seconds = run_step(shell, script, env, cwd)
             replayed += 1
             print(f"STEP {i}/{total} {name}: rc={rc} ({seconds:.1f}s)")
@@ -482,9 +526,10 @@ def self_test() -> int:
                 1,
             ),
             (
-                # Quoted on purpose: a bare `false` is a YAML boolean,
-                # and str(False) is a command that does not exist (127),
-                # a fixture defect, not a tool defect. Measured.
+                # Quoted on purpose: a bare `false` is a YAML boolean.
+                # gh_text() renders it lowercase as GitHub does, so both
+                # forms run `false` now; the quotes keep the fixture
+                # reading as the shell command it is.
                 "the default shell still stops on a failing command",
                 head + '      - name: e\n        run: "false"\n',
                 1,
@@ -517,6 +562,37 @@ def self_test() -> int:
                 "the script runs from a file, so $0 names one, as on a runner",
                 head + '      - name: zero\n        run: test -f "$0"\n',
                 0,
+            ),
+            (
+                "a job-level default working-directory is honoured",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    defaults:\n"
+                "      run:\n        working-directory: sub\n    steps:\n"
+                '      - name: wd\n        run: test "$(basename "$PWD")" = sub\n',
+                0,
+            ),
+            (
+                "a boolean env value reaches the step lowercase, as on GitHub",
+                head + "      - name: flag\n        env:\n          FLAG: true\n"
+                '        run: test "$FLAG" = true\n',
+                0,
+            ),
+            (
+                "a job with container: is refused",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    container: node:20\n"
+                "    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a job with services: is refused",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    services:\n"
+                "      db:\n        image: postgres:16\n"
+                "    steps:\n      - name: a\n        run: echo x\n",
+                EXIT_UNTRUSTED,
+            ),
+            (
+                "a null steps: is refused, not a traceback",
+                "on: push\njobs:\n  gate:\n    runs-on: x\n    steps:\n",
+                EXIT_UNTRUSTED,
             ),
             (
                 "the parent's VIRTUAL_ENV does not reach a step",
@@ -566,7 +642,7 @@ def self_test() -> int:
 def main(argv: list[str]) -> int:
     """Parse arguments and dispatch."""
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    ap.add_argument("--job", default="gate")
+    ap.add_argument("--job", default=None, help="job to replay or list; default gate")
     ap.add_argument(
         "--root",
         type=Path,
@@ -591,8 +667,15 @@ def main(argv: list[str]) -> int:
         return self_test()
     if args.list:
         doc = load_workflow(workflow)
-        for job, spec in doc["jobs"].items():
-            steps = spec.get("steps", [])
+        try:
+            listed = (
+                doc["jobs"] if args.job is None else {args.job: job_spec(doc, args.job)}
+            )
+        except KeyError as exc:
+            print(f"REFUSED: {exc}")
+            return EXIT_UNTRUSTED
+        for job, spec in listed.items():
+            steps = spec.get("steps") or []
             runs = sum(1 for s in steps if "run" in s)
             print(f"{job}: {runs} run-steps, {len(steps) - runs} uses-steps")
             for i, s in enumerate(steps, start=1):
@@ -601,7 +684,7 @@ def main(argv: list[str]) -> int:
         return 0
     return replay(
         workflow,
-        args.job,
+        args.job or "gate",
         root=root,
         keep_going=args.keep_going,
         tail=args.tail,
