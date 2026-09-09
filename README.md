@@ -158,12 +158,19 @@ way on this template a week after extraction, and neither was found by reading.
   file and revealed that its next arm had been reporting a setting as "read
   now" that this project has never had.
 
-**Replaying the Gate locally.** Copy each `run:` block out of
-`.github/workflows/ci.yml` by hand, flags and all, run each under `bash -e`,
-and print one exit code per line: a wrapper's own exit code is not the verdict,
-and `| tail` looks identical red or clean. The Gate job passes
-`DEFAULT_BRANCH` in from the workflow context, so supply your default branch
-when you replay the step that reads it.
+**Replaying the Gate locally.**
+
+```bash
+uv run --frozen python scripts/run-gate-locally.py --tail 400
+```
+
+**The verdict is the tool's own `REPLAY` line**, not the exit code of whatever
+you wrapped around it: a wrapper's status and a `| tail` both look identical red
+or clean. It reads `ci.yml`'s own `run:` blocks rather than a second copy of
+them, and it REFUSES what it cannot faithfully reproduce instead of guessing.
+If you replay a step by hand instead, run each block under `bash -e` and print
+one exit code per line, and pass `DEFAULT_BRANCH` in: the Gate gets it from the
+workflow context, so the step that reads it has nothing to read locally.
 
 **Expect real findings, and they are the point.** Ruff's wider selection
 surfaced 18 substantive issues in the subject's code that its own
@@ -185,10 +192,25 @@ superseded run. `runs-on: ubuntu-latest` everywhere — a macOS runner bills at
 
 ## What is actually enforced today
 
-**Seven checkers are ENABLED**, listed below. The registry counts ELEVEN
-wired members, because it also counts three controls scripts and
-`check-scripts-lib-survives-gitignore.sh` from the `.gitignore` note above.
-These are the ones that hold on a project with no code in it yet:
+**Seven checkers are ENABLED**, and the table below is all seven. Two other
+numbers describe the same machinery and neither is this one, so all three are
+reconciled here rather than left to collide. **A Gate STEP is a `run:` block; a
+registry member is a FILE.** Counting `ci.yml`'s `gate` job and asking of each
+step whether its body names a tracked file under `docs/reviews/` or `scripts/`:
+
+- **18** `run:` steps in the job, of which
+- **12** invoke this repository's own machinery (the other six are `uv sync`,
+  `uv lock --check`, ruff, ruff format, mypy and pytest), and those 12 steps
+  invoke
+- **11** DISTINCT FILES, which is exactly what
+  `check-checkers-are-wired.py` reports as `WIRED`. Twelve steps run eleven
+  files because the registry runs TWICE, once as the census and once as
+  `--self-test`.
+
+Of those 11 files, **7** are the checkers in the table, **3** are controls
+scripts, and the last is `check-scripts-lib-survives-gitignore.sh` from the
+`.gitignore` note above. These seven are the ones that hold on a project with no
+code in it yet:
 
 | Gate | What it asserts |
 |---|---|
