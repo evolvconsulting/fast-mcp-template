@@ -51,6 +51,37 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 CONFIG = ROOT / "src" / "fast_mcp_template" / "config.py"
 
 
+def _config_text() -> str:
+    """`config.py`'s source, or a NAMED REFUSAL at exit 3.
+
+    **A MISSING CONFIG IS A BROKEN INSTRUMENT, NOT A FINDING.** Both
+    readers of this file used bare `read_text`, so a CONFIG pointing at
+    a path that is not there raised FileNotFoundError as an unhandled
+    traceback, and an unhandled exception exits 1 - the code `main()`
+    uses for a real undeclared name. A broken instrument was wearing a
+    finding's exit code, which is the exact distinction the rest of this
+    directory keeps.
+
+    THAT IS REACHABLE RATHER THAN CONTRIVED. This checker's own registry
+    row tells an adopter to point CONFIG at their renamed package, and
+    the moment between editing that constant and moving the file is
+    precisely when it is wrong. Found by review round 1 on this branch,
+    in code this branch had just added, in the same shape this branch
+    had already fixed three times in other files.
+
+    ONE HELPER FOR BOTH READ SITES, deliberately: `_env_prefix` and
+    `declared` each read the same file, and two guards written
+    separately are two guards that can drift.
+    """
+    try:
+        return CONFIG.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"{CONFIG} could not be read: {exc}")
+        print("Point CONFIG at this project's settings module.")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        raise SystemExit(3) from exc
+
+
 def _env_prefix() -> str:
     """This project's env prefix, READ from config.py, never retyped.
 
@@ -60,10 +91,7 @@ def _env_prefix() -> str:
     constant that mirrors a value living in another file drifts the
     moment that file changes; reading it cannot.
     """
-    found = re.search(
-        r'env_prefix\s*=\s*"([A-Za-z0-9_]+)"',
-        CONFIG.read_text(encoding="utf-8"),
-    )
+    found = re.search(r'env_prefix\s*=\s*"([A-Za-z0-9_]+)"', _config_text())
     if not found:
         print(f"no env_prefix= in {CONFIG}. Point CONFIG at this")
         print("project's settings module. This is a BROKEN INSTRUMENT,")
@@ -101,7 +129,7 @@ def declared() -> set[str]:
     `env_prefix`, so the literal never appears in `config.py` - which is
     why this is derived from the field names rather than grepped.
     """
-    tree = ast.parse(CONFIG.read_text(encoding="utf-8"))
+    tree = ast.parse(_config_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "Settings":
             return {
