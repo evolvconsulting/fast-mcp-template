@@ -202,6 +202,44 @@ def cells(line: str) -> list[str]:
 
 
 def slice_section(text: str, start: str, end: str | None) -> str:
+    """The text from `start` up to `end`, or a NAMED REFUSAL.
+
+    **A MISSING HEADING IS A BROKEN INSTRUMENT, NOT A FINDING, AND THIS
+    USED TO BE A TRACEBACK.** Every heading this function is asked for
+    is one the SOURCE project's design carried. Against this template's
+    placeholder design the first is absent and `str.index` raised
+    `ValueError: substring not found`, so the checker died with an
+    unhandled traceback at exit 1 - and 1 is this file's code for a
+    real coupling violation. MEASURED on this repository 2026-09-09,
+    before this guard, on the section 8 heading.
+
+    Exit 2 is the code for a task rather than a failure, which is what
+    an adopter who has not yet written their design is looking at. The
+    heading is NAMED so the reader knows which one to write, rather
+    than being handed a stack.
+
+    **WHAT THIS DOES NOT GUARD, stated rather than left to be found.**
+    Five `str.index` calls further down slice INSIDE sections this
+    function has already returned, on sub-headings such as
+    `Required cases` and `Residual Risks`. They are unreachable on a
+    design that fails here first, which is every design this guard
+    refuses, so they are not the measured defect and are not touched.
+    A design that HAS the four sections but not one of those five
+    sub-headings would still raise. That is a real shape and it is
+    reported rather than fixed unmeasured.
+    """
+    for needle, what in ((start, "start"), (end, "end")):
+        if needle is None:
+            continue
+        if needle not in text:
+            print(f"MISSING HEADING ({what}): {needle!r}")
+            print("This checker reads a design laid out in the sections it")
+            print("names. Against a design that does not carry them it can")
+            print("enforce nothing, and a traceback would say so in the exit")
+            print("code of a real coupling violation. Write the section, or")
+            print("retarget the headings at your own design's shape.")
+            print("This is a BROKEN INSTRUMENT, not a finding. Exit 2.")
+            raise SystemExit(2)
     i = text.index(start)
     j = text.index(end, i) if end else len(text)
     return text[i:j]
@@ -213,7 +251,12 @@ def main(path: pathlib.Path) -> int:
     s11 = slice_section(text, "\n## 11. Threat model", "\n## 12.")
 
     stride = slice_section(s11, "\n### STRIDE Analysis", "\n### Threshold disposition")
-    closing = s11[s11.index("\n### Threshold disposition") :]
+    # THROUGH THE SAME GUARD, deliberately. This was a bare
+    # `s11.index(...)`, a FOURTH unguarded lookup that would have raised
+    # the same ValueError one line after the three above stopped doing
+    # so. `end=None` slices to the end of the text, which is what the
+    # bare index expression did.
+    closing = slice_section(s11, "\n### Threshold disposition", None)
 
     failures: list[str] = []
     rows: dict[str, dict[str, str]] = {}

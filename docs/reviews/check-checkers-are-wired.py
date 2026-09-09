@@ -271,9 +271,24 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "reaching the remote."
     ),
     "check-coupling.py": (
-        "TURN ON when DESIGN.md §3 states a real module layering. "
+        "TURN ON when DESIGN.md carries a section 11 threat model with a "
+        "STRIDE table and a section 8 test list. THE REASON THIS ROW USED "
+        "TO GIVE WAS FALSE IN BOTH HALVES, measured 2026-09-09: it said "
+        "'TURN ON when DESIGN.md section 3 states a real module layering. "
         "It enforces that layering against the code; against the "
-        "placeholder §3 it has nothing to enforce."
+        "placeholder section 3 it has nothing to enforce.' This checker "
+        "reads no section 3 - grep the file, there is no reference to one "
+        "- and it enforces nothing against the code. Its own docstring "
+        "says what it does: it checks section 11's threat model against "
+        "itself and against section 8, because that coupling claim was "
+        "hand-checked and wrong on three consecutive review rounds in the "
+        "source project. A reason that names the wrong section and the "
+        "wrong subject sends the next reader to write the wrong document. "
+        "AND 'NOTHING TO ENFORCE' WAS THE WORSE HALF: it reads as a quiet "
+        "no-op, and until this commit the checker died with an unhandled "
+        "ValueError at exit 1, the code this file uses for a real "
+        "violation. It now refuses by name at exit 2 and prints the "
+        "heading it wanted."
     ),
     "check-coupling-controls.py": (
         "the controls for check-coupling.py; wire it in the same commit as its subject."
