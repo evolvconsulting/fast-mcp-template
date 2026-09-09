@@ -151,6 +151,15 @@ way on this template a week after extraction, and neither was found by reading.
   project's API key, which that grep does find; the same sweep also turned up a
   foreign commit, foreign design-section headings, foreign harness filenames and
   a foreign module inside an otherwise-renamed path, none of which it finds.
+- **Sweep every tracked file, not every tracked file with an extension you
+  thought of.** `git ls-files -z | xargs -0 grep -l -i <old project>`, with NO
+  suffix filter. A sweep written as `--include='*.py' --include='*.md'` and so
+  on cannot see a file with no extension at all, and the files with no
+  extension are the ones that carry a project's IDENTITY: `NOTICE`, `LICENSE`,
+  `CODEOWNERS`, `Dockerfile`, `Makefile`. Measured here: a suffix-globbed sweep
+  reported the tree clean while `NOTICE` still named the source project and
+  disclaimed affiliation with a company this template has nothing to do with.
+  Read those files by name, whatever any sweep says.
 - **A checker with subcommands needs each arm run.** One here reaches a clean
   verdict with no arguments and dies on a foreign constant under `--self-test`.
 - **Fixing one refusal can uncover a wrong answer, not just an unrun stage.**
