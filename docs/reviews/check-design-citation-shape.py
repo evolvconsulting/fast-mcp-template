@@ -29,10 +29,11 @@ re-derived. **The current freeze is the `--sha` default and nowhere
 else in this file** - it has moved three times, and a second copy of it
 in prose went stale on the second move:
 399 occurrences, 206 distinct ranges, 0 out of bounds, 8 entirely blank,
-11 fence-or-separator only. A record of where a defect WAS, so it does
-not move: `DESIGN.md:311` (REPOINT-EXEMPT) was cited for "a URL
-containing a secret is never constructed"; 311 was blank and the
-sentence was at 312-313.
+11 fence-or-separator only. A record of the defect's SHAPE rather than
+its address, because that project's line numbers are dangling pointers
+here: one citation opened on a BLANK line and so covered the paragraph
+break instead of the sentence under it. It resolved, it quoted
+plausibly, and it named the wrong thing.
 
 **Not a CI gate yet.** It reports a lower bound on a defect population
 nobody has finished counting, and wiring a gate whose backlog is unknown
@@ -42,8 +43,10 @@ it names, then wire it.
 **R12-N1 ADDED A FOURTH SHAPE: a range that ENDS on a blank line**, i.e.
 one line longer than its subject. The start check had had no mirror
 since it was written. It was raised off TWO instances a reviewer had
-read - `DESIGN.md:373-383` and `:674-680`, REPOINT-EXEMPT because
-this line RECORDS where the defect was - and the check then found
+read, whose addresses are deliberately NOT reproduced here: they point
+into the SOURCE project's design, and written out in citation shape
+they would be dangling pointers in this template rather than a record
+of anything. The check then found
 FORTY-SIX, which is this docstring's own lesson arriving at the
 person writing the check. Harmless per instance and cumulative in
 the aggregate: a range that can grow a line at every repoint
@@ -264,6 +267,33 @@ def frozen_sha() -> str:
 
 
 def main() -> int:
+    """Run the scan, and separate a broken register from a finding.
+
+    A missing or malformed `docs/reviews/REPOINT-EXEMPT.txt` used to
+    let `RegisterError` escape this file's entry point as a raw
+    traceback and exit 1, which is the code this checker uses for "a
+    citation cannot be its subject". Exit 3 is the BROKEN INSTRUMENT
+    code its sibling already uses for a missing git object, and it is
+    the one a reader can act on.
+
+    THE ENTRY POINT IS NAMED BY ITS ROLE HERE AND NOT BY ITS
+    IDENTIFIER, because the commit that added this docstring also
+    carved `_scan` out of the old `main()`. The first version of this
+    sentence said the traceback "used to escape `_scan`", and `_scan`
+    did not exist when that was true. A historical claim written in
+    the names of the present cannot decay, because it was never true;
+    it is the one shape a sweep against HEAD can never catch, since
+    every identifier in it resolves.
+    """
+    try:
+        return _scan()
+    except repoint_exempt.RegisterError as exc:
+        print(f"BROKEN REGISTER: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
+
+
+def _scan() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha", default=frozen_sha(), help="the frozen DESIGN.md")
     parser.add_argument(

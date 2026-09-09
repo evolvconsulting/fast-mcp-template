@@ -208,11 +208,20 @@ _WIRED_SUBJECT = "check-design-freeze.py"
 #: a sentence nobody can act on.
 #:
 #: Each reason states **when to turn the gate on**. That is the whole
-#: design of this template: 5 gates are wired and the rest are present
-#: and off, because a project that starts with three dozen gates it has
-#: not earned spends its first month servicing them. Wire one when the
-#: artefact it checks exists - AND only after measuring it green, since
-#: a gate that lands red is one people learn to ignore.
+#: design of this template: a short list is wired and the rest are
+#: present and off, because a project that starts with three dozen
+#: gates it has not earned spends its first month servicing them.
+#:
+#: A DIGIT USED TO SIT IN THAT SENTENCE, saying five, and it was
+#: already false when it was read: `main()` printed a larger figure on
+#: the same tree. It is deleted rather than corrected, for the reason
+#: the docstring above gives - a denominator that moves with every
+#: commit goes stale faster than any date could qualify it - and
+#: `main()` prints the live one on every run.
+#:
+#: Wire one when the artefact it checks exists - AND only after
+#: measuring it green, since a gate that lands red is one people learn
+#: to ignore.
 #:
 #: DELETING an entry is how a gate gets turned on: wire the step, delete
 #: the row, in one commit. Leaving the row behind fails the build on the
@@ -286,30 +295,65 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     "check-design-citations.py": (
         "TURN ON once code and documents cite THIS project's "
         "DESIGN.md at `file:line`. It checks every citation resolves "
-        "to a line that exists. Two things stop it today, both "
-        "measured 2026-09-08 (defect D9): the carried machinery still "
-        "holds 13 strings its regex reads as citations into the "
-        "SOURCE project's design, every one past the end of this "
-        "74-line placeholder, so wiring it would land red; and its "
-        "register file, docs/reviews/REPOINT-EXEMPT.txt, was not "
-        "carried into the template, so it exits with RegisterError "
-        "before it reads a single citation. The 13 are not one "
-        "population: six are pointers extraction left dangling (two "
-        "in check-design-citation-shape.py, four in "
-        "check-committed-file-types.py) and seven sit in "
-        "check-design-citations.py itself, a mix of historical "
-        "citations and its own example and demonstration lines, "
-        "which never cited anything, so an exemption reason of "
-        "'left by extraction' would be false for those. Restore the "
-        "register, repoint or prose the dangling six, exempt the "
-        "checker's own examples by name, then turn it on. The "
-        "earlier reason here, that the template ships zero "
-        "citations, was false from the first commit."
+        "to a line that exists. ITS BACKLOG IS NOW ZERO and its "
+        "register is restored: defect D9 is closed as of 2026-09-08. "
+        "The 13 strings its regex read as citations into the SOURCE "
+        "project's design are gone - six were pointers extraction "
+        "left dangling and three more sat in this checker's own "
+        "narrative, all nine now prose - and the four that remain are "
+        "this checker showing what its own pattern MATCHES, on two "
+        "lines, marked AND registered by address in "
+        "docs/reviews/REPOINT-EXEMPT.txt. WHAT STOPS IT NOW IS THE "
+        "OPPOSITE CONDITION, and it is the rule two rows of this dict "
+        "already apply: the corpus is EMPTY. With every remaining "
+        "citation exempt, citations() returns nothing and the checker "
+        "refuses at its own SELECTOR CONTROL, exit 1, because a "
+        "checker over an empty population reports full coverage. THE "
+        "TWO GUARD SITES, named by FUNCTION and by MESSAGE rather "
+        "than by line so the next reader can find them without "
+        "taking this on trust: _report_bounds in "
+        "check-design-citations.py, printing 'SELECTOR CONTROL: no "
+        "DESIGN.md citations found anywhere'; and _scan in "
+        "check-design-citation-shape.py, printing 'PARSED ZERO "
+        "CITATIONS. The selector is broken; a green means nothing.' "
+        "THE LINE NUMBERS ARE DELETED RATHER THAN CORRECTED, and "
+        "that is a measurement rather than fastidiousness. This row "
+        "carried them for exactly one commit. They were 185-190 and "
+        "305-307 at the branch point, 187-192 and 308-310 when this "
+        "row first quoted them, and the NEXT commit inserted a "
+        "wrapper above the second guard and renamed the function "
+        "around it, making 308-310 wrong and 'main()' wrong in the "
+        "same edit. Two decays inside one branch, in the row written "
+        "to explain a checker for citations that stop resolving. "
+        "Nothing in this repository checks a cross-file line "
+        "reference, so grep the message. "
+        "BOTH DIRECTIONS, and run it rather than trusting this "
+        "sentence: with the register intact and the backlog swept it "
+        "exits 1 at its own SELECTOR CONTROL, and with the register "
+        "missing or malformed it exits 3 and prints BROKEN INSTRUMENT, "
+        "which is the whole point of separating the two. THE FIRST "
+        "VERSION OF THIS SENTENCE SAID BOTH WERE 1. It was true when "
+        "written and false three commits later, because the commit "
+        "that made a broken register exit 3 did not come back and "
+        "correct the prose describing it. Fourth claim on this branch "
+        "to decay, and the first that was neither a line number nor a "
+        "count, so grep the two quoted phrases above rather than the "
+        "digits beside them. "
+        "WHAT TURNS IT ON: write your design, cite it from code at "
+        "file:line, run this checker until it exits 0, then wire it "
+        "and the shape checker in one commit and delete both rows."
     ),
     "check-design-citation-shape.py": (
-        "TURN ON with check-design-citations.py. It scans the SHAPE "
-        "of a citation - a bare number with no anchor cannot be "
-        "re-derived - and needs a citation corpus to scan."
+        "TURN ON with check-design-citations.py, in the same commit "
+        "and for the same measured reason. It scans the SHAPE of a "
+        "citation - a range that is blank, or nothing but a fence, or "
+        "starts or ends on a blank line, cannot be anyone's subject - "
+        "and it needs a citation corpus to scan. This template has "
+        "none: measured 2026-09-08 with D9 swept, every remaining "
+        "citation is exempt and it refuses at its own PARSED ZERO "
+        "CITATIONS guard, in _scan, exit 1. Named by function and by "
+        "message rather than by line; the row above carries the "
+        "measurement that settled why."
     ),
     "check-env-vars-are-declared.py": (
         "TURN ON when config.py declares more than the placeholder "

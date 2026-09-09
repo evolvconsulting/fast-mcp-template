@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Committed-file-type gate. DESIGN.md:1717-1724.
+"""Committed-file-type gate.
+
+THE POLICY IS NOT IN THIS TEMPLATE'S DESIGN.md YET. docs/DESIGN.md is a
+placeholder, so the rules below are the SOURCE project's, carried so the
+shape survives. Until 2026-09-08 this docstring cited four line ranges
+in the 1700s of that project's design document, every one of them past
+the end of this 74-line placeholder. They are written out as rules now,
+and deliberately not quoted in citation shape, because the carried
+citation checker's regex reads any such string as live. When your
+DESIGN.md gains a committed-file-type section, cite it here and turn the
+gate on.
 
 WHY THIS EXISTS, stated because a control nobody understands gets
 disabled the first time it is inconvenient: a CONFIDENTIAL vendor PDF
@@ -12,9 +22,9 @@ A secret scanner cannot see either file. A PDF has no high-entropy token
 and matches no credential regex, so it passes every secret scanner
 cleanly. This gate is the other half.
 
-WHAT IT DOES NOT DO, from the design's own admission at
-DESIGN.md:1722-1724: it stops a FILE of the wrong type entering the
-repository. It does nothing about confidential prose pasted into
+WHAT IT DOES NOT DO, and the source project's design admitted it in so
+many words: it stops a FILE of the wrong type entering the repository.
+It does nothing about confidential prose pasted into
 Markdown. Of the two files that actually leaked here, the `.raml` is
 refused by rule 2 (unknown extension) and the `.pdf` by rules 1 and 3 -
 but a reader who trusts this gate to prevent "the incident" in general
@@ -25,8 +35,7 @@ THE FIVE RULES, in the order they are applied to each staged file:
   0. EXCEPTION. A path listed in `.file-type-allowlist` is skipped. The
      allowlist is read FROM THE INDEX, not the working tree, so an
      exception is usable only once it is staged - i.e. only when it
-     appears in the same commit's diff, where a reviewer sees it
-     (DESIGN.md:1720-1721).
+     appears in the same commit's diff, where a reviewer sees it.
   1. EXTENSION DENYLIST. The incident classes, refused by name so the
      message says what happened rather than "unknown type".
   2. ALLOWLIST-FIRST. Anything whose extension or basename is not on the
@@ -287,7 +296,7 @@ def main(argv: list[str]) -> int:
 
     if refusals:
         print("")
-        print("COMMIT REFUSED by the committed-file-type gate (DESIGN.md:1717-1724).")
+        print("COMMIT REFUSED by the committed-file-type gate.")
         print("A CONFIDENTIAL vendor PDF and an unlicensed RAML reached public remotes")
         print("on this project once already. History rewriting did not close it.")
         print("")
