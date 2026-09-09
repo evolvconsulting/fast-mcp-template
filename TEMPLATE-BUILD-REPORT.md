@@ -501,11 +501,22 @@ red should stay red. 131 + 48 + 18 = 197.
   reading, not by a live run.
 
   **This stopped being true on 2026-09-03**, and the sentence above is left
-  standing because it was true when it was written. `gh run list --repo
-  evolvconsulting/fast-mcp-template` shows eleven CI runs from `2026-09-03
-  05:32Z` onward: the first FAILED, the next succeeded 4 minutes later, and
-  pull requests 1, 2 and 3 and their push-to-main runs have all been green
-  since. So three of the four claims in that bullet are now settled by live
+  standing because it was true when it was written. The first Actions run of
+  this repository was at `2026-09-03 05:32:16Z` and it FAILED; the next, four
+  minutes later, succeeded. Pull requests 1, 2 and 3 and each of their
+  push-to-main runs have been green since.
+
+  **NO RUN COUNT IS GIVEN HERE, and that is deliberate.** A count of runs
+  rises every time anyone pushes, so it goes stale faster than any date
+  beside it could qualify. The first draft of this paragraph said "eleven CI
+  runs", and eleven was the number of ALL ACTIONS RUNS at the moment it was
+  written: nine were the CI workflow and two were Dependency Graph. So as
+  worded it named the wrong population, and it went stale within the hour
+  besides. Read the runs yourself with `gh run list --repo
+  evolvconsulting/fast-mcp-template --json workflowName,event,conclusion`,
+  which says which workflow each row is; the facts below do not move.
+
+  So three of the four claims in that bullet are now settled by live
   runs rather than by reading. The pull-request runs execute the Gate job
   alone, because every other job carries a push-only `if:`, and they completed
   in **31s, 39s and 41s** against a target of three minutes. A `schedule` run
