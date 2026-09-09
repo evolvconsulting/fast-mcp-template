@@ -552,7 +552,17 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     ),
     "check-suite-floor-amputation.sh": (
         "the amputation harness proving the suite-floor guard can "
-        "fail; wire it in the same commit as its subject."
+        "fail; wire it in the same commit as its subject. ON THIS "
+        "REPOSITORY IT REFUSES BEFORE IT AMPUTATES, and says so: its "
+        "subject test tests/test_suite_floor.py was never carried from "
+        "the source project, so it exits 2 with 'MISSING TESTS: "
+        "<path>'. Until that test exists there is nothing here for a "
+        "deleted branch to kill. MEASURED 2026-09-09, review round 4: "
+        "before the refusal was added every amputation reported "
+        "SURVIVED against 'no tests ran in 0.00s', and the run then "
+        "printed 'the harness did not restore the script' at exit 1 "
+        "while the script was byte for byte its backup - a harness "
+        "that measured nothing announcing a dirty tree that was clean."
     ),
     "check_advisories.py": (
         "TURN ON together with a `pip-audit` step. It emits "

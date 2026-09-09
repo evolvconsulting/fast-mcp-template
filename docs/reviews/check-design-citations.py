@@ -74,6 +74,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import traceback
 
 import repoint_exempt
 
@@ -145,6 +146,17 @@ def _git(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
         )
     except FileNotFoundError as exc:
         raise GitUnavailableError(f"git is not on PATH: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        # THE THIRD MODE, found by review round 4 on this branch and
+        # already fixed in fast-mcp-jobvite's copy. `text=True` makes
+        # `subprocess.run` decode, so a git that exits 0 and emits
+        # bytes that are not UTF-8 raises HERE, which is neither
+        # FileNotFoundError nor CalledProcessError and so walked
+        # straight past a guard naming those two. Reproduced with a
+        # fake git printing one 0xff byte: bare traceback at exit 1.
+        raise GitUnavailableError(
+            f"git {' '.join(args)} ran but its output is not UTF-8: {exc}"
+        ) from exc
     except subprocess.CalledProcessError as exc:
         raise GitUnavailableError(
             f"git {' '.join(args)} exited {exc.returncode}: "
@@ -591,7 +603,7 @@ def controls(text: str) -> int:
     return 0 if fired == total else 1
 
 
-def main(argv: list[str]) -> int:
+def _dispatch(argv: list[str]) -> int:
     # A BROKEN REGISTER IS A BROKEN INSTRUMENT, NOT A FINDING, and the
     # two must not share an exit code. That is the rule `_report_moves`
     # already states one function up for a missing git object, and this
@@ -693,6 +705,40 @@ def main(argv: list[str]) -> int:
         return 3
     except repoint_exempt.RegisterError as exc:
         print(f"BROKEN REGISTER: {exc}")
+        print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
+        return 3
+
+
+def main(argv: list[str]) -> int:
+    """Run the checker; never let a crash wear a finding's exit code.
+
+    THIS CLOSES A CLASS RATHER THAN A DEFECT. Every guard above is
+    named and specific, and each was added after a round had shown
+    the exact failure it names: a missing register, an unreadable
+    design, git absent, git failing, git emitting bytes that are not
+    UTF-8. Five rounds, five types. A sixth list of types would be
+    the same mistake, longer, so this names none.
+
+    IT IS A FLOOR, NOT A REPLACEMENT. The named guards above print
+    text a reader can act on, which file and which command and which
+    mode, and a generic refusal cannot. Add a named guard for any
+    failure seen in practice; this only ensures the one nobody
+    predicted refuses instead of lying. Anything reaching here means
+    the run established NOTHING, which is what exit 3 is for, and
+    the traceback goes to stderr unabridged so nothing is lost.
+
+    Ported from fast-mcp-jobvite's fix/citation-controls-population
+    at 3cb6af0, read read-only. That branch is UNMERGED, and this is
+    a PARTIAL port: board row 47 carries the rest.
+    """
+    try:
+        return _dispatch(argv)
+    except Exception as exc:  # noqa: BLE001 - see the docstring above
+        traceback.print_exc()
+        print(
+            f"REFUSED: {type(exc).__name__} reached the top of this "
+            f"checker, so the run established nothing: {exc}"
+        )
         print("This is a BROKEN INSTRUMENT, not a finding. Exit 3.")
         return 3
 
