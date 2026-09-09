@@ -21,6 +21,27 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="$REPO/scripts/check-u15-gate-amputation.sh"
+
+# THE SUBJECT MUST EXIST, AND SAYING SO IS THE FIRST THING THIS DOES.
+# This template ships no amputation harnesses; `$S` is a harness of the
+# project the machinery was extracted from. Without this guard the run
+# went: `cp "$S" "$B"` failed silently (there is no `set -e`), leaving
+# the backup EMPTY; `grep -Fc` on a missing file set `n` to the empty
+# string; `[ "$n" -eq 1 ]` printed "integer expression expected" and
+# took the abort branch, which reported "the anchor is not unique" -
+# a message that is not merely unhelpful but FALSE, because there is no
+# file to hold an anchor. MEASURED on this repository 2026-09-09.
+# Refusing here names the real cause and, because it is above `mktemp`,
+# leaves nothing to clean up.
+if [ ! -f "$S" ]; then
+  echo "MISSING HARNESS: $S"
+  echo "This control deletes one row from that harness and reads the"
+  echo "harness's own exit code, so with no harness there is nothing to"
+  echo "measure. Carry an amputation harness, or repoint S at yours."
+  echo "This is a BROKEN INSTRUMENT, not a finding. Exit 2."
+  exit 2
+fi
+
 B="$(mktemp)"
 
 # A dirty subject file means someone else is mid-edit; measuring it would
@@ -52,7 +73,18 @@ fi
 # the EMPTY file mktemp just made over the harness - a restore that destroys
 # the thing it restores. Caught by reading, before this script ever ran.
 cp "$S" "$B"
-trap 'cp "$B" "$S"; rm -f "$B" "$B.out"' EXIT
+# AND THE RESTORE ONLY RUNS FROM A BACKUP THAT HAS SOMETHING IN IT. The
+# comment above foresaw an EMPTY backup being copied over the harness and
+# defended against one route to it: arming the trap before the backup.
+# It arrived by the other route. `cp` above can fail - it did, on every
+# run of this file in this repository, because `$S` was absent - and
+# there is no `set -e`, so the trap fired with `$B` still the zero-byte
+# file `mktemp` had just made and CREATED `$S` at 0 bytes. That is the
+# untracked file this control left behind on both of its runs here. The
+# guard above stops that cause; `-s` stops the shape, whatever the
+# cause, so a `cp` that fails for a reason nobody has thought of cannot
+# destroy the subject either.
+trap 'if [ -s "$B" ]; then cp "$B" "$S"; fi; rm -f "$B" "$B.out"' EXIT
 
 # The anchor must be unique and present BEFORE the deletion. A row that was
 # already renamed would otherwise delete nothing and pass for the wrong reason.

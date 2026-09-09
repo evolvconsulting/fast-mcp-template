@@ -388,7 +388,18 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "verdict machine-readable instead of prose."
     ),
     "check-harness-result-controls.sh": (
-        "the controls for the row above; wire it in the same commit as its subject."
+        "the controls for the row above; wire it in the same commit "
+        "as its subject. ONE OF ITS ELEVEN ROWS CANNOT RUN HERE, and "
+        "this reason did not say so until 2026-09-09: C10 mutates a "
+        "multi-line EXIT trap in "
+        "scripts/check-u1-boot-amputation.sh, a harness of the source "
+        "project that this template does not ship. It now prints NOT "
+        "RUN and names the path; before that guard `grep -c` on the "
+        "missing file left an empty string in an arithmetic test and "
+        "it printed 'line 227: [: : integer expression expected' "
+        "twice. The row is counted in TOTAL and not in FIRED, so the "
+        "tally reads 9/11 at exit 1 rather than claiming a pass it "
+        "did not earn."
     ),
     "check-harness-anchors.py": (
         "TURN ON with the first harness. It refuses a harness "
@@ -400,8 +411,21 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     ),
     "check-harness-anchors-controls.sh": (
         "the controls for the row above. It PLANTS a mutation in a "
-        "src/ module, so retarget its `target =` line at one of "
-        "yours before wiring it."
+        "src/ module, and 'retarget its `target =` line' UNDERSTATED "
+        "THAT until 2026-09-09: the module it names, "
+        "src/fast_mcp_template/audit.py, DOES NOT EXIST in this "
+        "repository. The package name was genericised at the "
+        "extraction and the module name was not. Five arms die on "
+        "FileNotFoundError and the harness reports rows=15 floor=15 "
+        "fired=1/15 status=breach. RETARGETING WAS MEASURED AND "
+        "REJECTED: the arms mutate one exact line, `return "
+        "ATTRIBUTION_UNAVAILABLE if self.transport is "
+        "Transport.STDIO else None`, and no module in this src/ "
+        "carries it or anything like it - the four here are 5, 14, "
+        "32 and 56 lines of placeholder. Pointing it at one of them "
+        "would make the setup step fail differently, not make the "
+        "arms fire. Retarget it at a real module of your own, with a "
+        "line worth mutating, when you have one."
     ),
     "check-landing-published.py": (
         "TURN ON with the first harness. It refuses a harness that "
@@ -479,7 +503,19 @@ UNWIRED_BY_DECISION: dict[str, str] = {
     "check-row-floor-control.sh": (
         "the second control harness for the floor checkers; wire "
         "with its subject. Two files, two different arms - do not "
-        "delete one as a duplicate without reading both."
+        "delete one as a duplicate without reading both. AND IT "
+        "CANNOT RUN HERE AT ALL, which this reason did not say "
+        "until 2026-09-09: its subject is "
+        "scripts/check-u15-gate-amputation.sh, an amputation harness "
+        "of the project this machinery came from, and this template "
+        "ships none. It now refuses by name at exit 2. Before that "
+        "guard it reported 'ABORT: the anchor is not unique - "
+        "repoint it', which is FALSE - there is no file to hold an "
+        "anchor - and its EXIT trap then copied an EMPTY backup over "
+        "the missing path, leaving a 0-byte "
+        "scripts/check-u15-gate-amputation.sh untracked in the tree "
+        "on every run. Wire it when this project carries an "
+        "amputation harness with a row floor."
     ),
     "check-suite-floor.sh": (
         "TURN ON once the suite is large enough for a floor to mean "
