@@ -316,9 +316,20 @@ def test_ci_runs_the_pin_gate() -> None:
 def test_the_pin_gate_fires_on_a_tag_and_exempts_local_actions(tmp_path: Path) -> None:
     sha = "a" * 40
     ok = tmp_path / "ok.yml"
-    ok.write_text(f"steps:\n  - uses: a/b@{sha} # v1\n  - uses: ./local\n")
+    ok.write_text(
+        f"jobs:\n  j:\n    steps:\n      - uses: a/b@{sha} # v1\n"
+        "      - uses: ./local\n"
+        f"      - {{name: x, uses: a/b@{sha}}}\n"
+    )
     assert _pins(ok).returncode == 0
+    f = tmp_path / "bad.yml"
     for bad in ("a/b@v1", "a/b@main", f"a/b@{sha[:39]}", "a/b"):
-        f = tmp_path / "bad.yml"
-        f.write_text(f"steps:\n  - uses: {bad}\n")
-        assert _pins(f).returncode == 1, bad
+        for body in (
+            f"      - uses: {bad}\n",
+            f"      - {{name: x, uses: {bad}}}\n",
+            f'      - {{name: x, "uses": "{bad}"}}\n',
+        ):
+            f.write_text(f"jobs:\n  j:\n    steps:\n{body}")
+            assert _pins(f).returncode == 1, body
+    f.write_text("jobs:\n  j:\n    uses: org/repo/.github/workflows/w.yml@v1\n")
+    assert _pins(f).returncode == 1

@@ -18,8 +18,11 @@ uv run --frozen fastmcp inspect src/fast_mcp_template/server.py:mcp
 
 ## Upgrading (BREAKING: authentication is now required)
 
-`fast-mcp-template http` fails closed. Before upgrading, set `MCP_TEMPLATE_API_KEY` and
-`MCP_TEMPLATE_REDIS_URL`. In production (`MCP_TEMPLATE_ENVIRONMENT=production`) the Redis URL
+`fast-mcp-template http` fails closed. Before upgrading, with the default
+`MCP_TEMPLATE_AUTH_MODE=legacy`, set `MCP_TEMPLATE_API_KEY` and `MCP_TEMPLATE_REDIS_URL`.
+`dual` and `platform` also need `MCP_TEMPLATE_BE_BASE_URL` (https in production) and a strong
+`MCP_TEMPLATE_INTERNAL_AUTH_SECRET`, and `platform` refuses to boot if `MCP_TEMPLATE_API_KEY`
+is set. In production (`MCP_TEMPLATE_ENVIRONMENT=production`) the Redis URL
 must be `rediss://` and `MCP_TEMPLATE_INTERNAL_CA_CERT` must be set. For local development only,
 `MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH=true` skips authentication; it is refused in production.
 

@@ -5,7 +5,11 @@ Notable changes to this project. Newest first.
 ## Unreleased
 
 - BREAKING: `fast-mcp-template http` now refuses to boot without authentication.
-  Required: `MCP_TEMPLATE_API_KEY` (a strong shared key) and `MCP_TEMPLATE_REDIS_URL`.
+  With the default `MCP_TEMPLATE_AUTH_MODE=legacy`, required: `MCP_TEMPLATE_API_KEY` (a strong
+  shared key) and `MCP_TEMPLATE_REDIS_URL`. `dual` and `platform` also need
+  `MCP_TEMPLATE_BE_BASE_URL` (https in production) and a strong
+  `MCP_TEMPLATE_INTERNAL_AUTH_SECRET`, and `platform` refuses to boot if `MCP_TEMPLATE_API_KEY`
+  is set.
   With `MCP_TEMPLATE_ENVIRONMENT=production` the Redis URL must be `rediss://` and
   `MCP_TEMPLATE_INTERNAL_CA_CERT` must be set. The only way to run without a credential is
   the dev-only `MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH` (refused in production). See

@@ -11,17 +11,29 @@ import re
 import sys
 from pathlib import Path
 
-USES = re.compile(r"^\s*(?:-\s+)?uses:\s*(\S+)")
+import yaml
+
 PINNED = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 
 
+def _uses(doc: object) -> list[object]:
+    """Every job-level and step-level `uses`, in any YAML spelling."""
+    jobs = doc.get("jobs") if isinstance(doc, dict) else None
+    found: list[object] = []
+    for job in (jobs or {}).values() if isinstance(jobs, dict) else []:
+        if not isinstance(job, dict):
+            continue
+        found.append(job.get("uses"))
+        found += [s.get("uses") for s in job.get("steps") or [] if isinstance(s, dict)]
+    return [u for u in found if u is not None]
+
+
 def unpinned(path: Path) -> list[str]:
-    bad = []
-    for n, line in enumerate(path.read_text().splitlines(), 1):
-        m = USES.match(line)
-        if m and not m.group(1).startswith("./") and not PINNED.match(m.group(1)):
-            bad.append(f"{path}:{n}: {m.group(1)}")
-    return bad
+    return [
+        f"{path}: {u}"
+        for u in map(str, _uses(yaml.safe_load(path.read_text())))
+        if not u.startswith("./") and not PINNED.match(u)
+    ]
 
 
 def main(argv: list[str]) -> int:
