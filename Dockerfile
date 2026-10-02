@@ -29,6 +29,19 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 
+# EC-639: the pinned base digest ships OpenSSL 3.5.7-1~deb13u2 (CVE-2026-75804, CVE-2026-84782)
+# and libpcre2 10.46-1~deb13u2 (CVE-2026-103111); the HIGH/CRITICAL image scan fails on them.
+# Named, exact-version upgrade of only the affected packages (no floating full-system upgrade).
+# REMOVE this layer in the digest-bump PR (an equal base makes it a no-op, a newer one makes apt
+# refuse the downgrade).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+        libssl3t64=3.5.7-1~deb13u3 \
+        openssl=3.5.7-1~deb13u3 \
+        openssl-provider-legacy=3.5.7-1~deb13u3 \
+        libpcre2-8-0=10.46-1~deb13u3 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Numeric ids, no login shell, no home: the task runs as 10001 and never needs more.
 RUN groupadd --gid 10001 appuser \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin appuser
