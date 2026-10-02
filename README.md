@@ -296,6 +296,23 @@ Ship **zero** numbered ADRs from here. `docs/adr/0000-template.md` is the shape.
 > An ADR records a decision that constrains future code. **A measurement is not
 > an ADR.** Write the measurement down where it was made and cite it.
 
+## Building blocks
+
+Folded in from the `fast-mcp-ado` rebuild (EC-639), one block per
+commit, each generalised (no ADO names) and shipped with its tests.
+Delete the ones your gateway does not need; each is a module, not a
+framework.
+
+| Block | Where | What it gives you |
+|---|---|---|
+| HTTP serving | `http/net.py`, `http/request_id.py`, `http/body_limit.py`, `http/errors.py`, `http/__init__.py`, `__main__.py` | `fast-mcp-template http` runs the app under uvicorn. Client IP from `X-Forwarded-For` by trusted hop count (Nth from the right, IPv6 folded to /64 for rate keys); a UUID v4 `X-Request-ID` on every response, including 401s (the middleware wraps the WHOLE app, because fastmcp runs auth outside `middleware=`); 413 problem+json on an oversized body (fastmcp enforces none); RFC 9457 problem+json for 404, 405 and 500 with no detail leak. |
+| Redis client | `infra/redis_client.py`, `config.py` | One process-wide client with 2 s connect and socket timeouts (no timeout meant a 127 s hang and a crash loop, EC-600). `rediss://` trusts ONLY `MCP_TEMPLATE_INTERNAL_CA_CERT` (the `InternalCAConnection` pattern, EC-637), never the system store, and refuses to boot without it. `redis_url` blank gives `None`. |
+
+Composition lives in two functions only: `wrap_http_app` (around the
+whole app) and `build_http_middleware` (the list for
+`mcp.http_app(middleware=...)`). Later blocks join those, so the order
+is written in one place.
+
 ## Layout
 
 ```

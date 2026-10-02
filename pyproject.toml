@@ -15,6 +15,7 @@ authors = [{ name = "evolv Consulting" }]
 dependencies = [
   "fastmcp==4.0.3",
   "pydantic-settings==2.15.0",
+  "redis==8.1.0",
 ]
 
 [project.scripts]
@@ -51,6 +52,7 @@ dev = [
   "pyyaml>=6",
   "types-PyYAML>=6",
   "pre-commit>=3.7",
+  "cryptography>=50.0.1",
 ]
 
 # ---------------------------------------------------------------------------
