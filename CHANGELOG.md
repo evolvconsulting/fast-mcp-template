@@ -22,3 +22,4 @@ Notable changes to this project. Newest first.
   `MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH` escape (never in production).
   Adds `DualModeVerifier`, `LegacyKeyVerifier`, the optional platform auth
   (`PlatformKeyVerifier`, `key_format`, vault) and the boot refusals.
+- EC-639: `ConcurrencyLimitMiddleware` and `RequestBodyGuard`, wired in `build_app`.

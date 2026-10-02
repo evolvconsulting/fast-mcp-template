@@ -269,6 +269,7 @@ convention = "google"
 # must stay BYTE-IDENTICAL to its three sibling copies (a test pins its
 # hash), so it can never be re-wrapped here.
 "src/fast_mcp_template/auth/{platform,dual,vault,key_format}.py" = ["W505", "E501"]
+"src/fast_mcp_template/http/concurrency.py" = ["W505", "E501"]
 
 # ---------------------------------------------------------------------------
 # FULL STRICTNESS STAYS ON, and the setting is NOT the gate on its own.

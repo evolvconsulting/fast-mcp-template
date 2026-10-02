@@ -6,4 +6,4 @@
 #
 # It may go UP. It may not go DOWN. Raising it is a commit that
 # says so; lowering it is a commit that has to be defended.
-99.16
+99.01
