@@ -8,12 +8,17 @@ gate that refuses a field nothing outside this module reads.
 
 from __future__ import annotations
 
+import logging
 import ssl
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlparse
 
-from pydantic import AwareDatetime, Field, model_validator
+from pydantic import AwareDatetime, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from fast_mcp_template.auth.types import AuthMode
+
+logger = logging.getLogger(__name__)
 
 # The rate limiter counts authenticated HTTP REQUESTS (`verify_token`
 # runs once per request); people reason in TOOL CALLS, and one tool
@@ -91,6 +96,47 @@ class Settings(BaseSettings):
     #: Where a caller replaces the retiring credential (the `Link`).
     manage_mcp_url: str | None = None
 
+    # --- Authentication (auth/, the optional platform-auth extra) -----
+    #: `legacy` | `dual` | `platform`; unset means `legacy`.
+    auth_mode: AuthMode | None = None
+    #: The shared (legacy) key. SecretStr: read it with
+    #: `.get_secret_value()`.
+    api_key: SecretStr | None = None
+    #: Base URL of the platform backend (`validate-key`). dual/platform
+    #: only.
+    be_base_url: str | None = None
+    #: Authenticates this gateway to the backend and keys the cache
+    #: record
+    #: MACs. SecretStr keeps it out of reprs and `model_dump()`.
+    internal_auth_secret: SecretStr | None = None
+    #: Set ONLY during a secret rotation: on a 403 the gateway retries
+    #: once.
+    internal_auth_secret_next: SecretStr | None = None
+    #: `production` turns the boot refusals on (TLS everywhere, no
+    #: disabled auth).
+    environment: Literal["local", "production"] = "local"
+    #: Deliberately alarming name: the ONLY way to serve
+    #: unauthenticated.
+    dangerously_disable_auth: bool = False
+    #: Keycache lifetime of a validated key, seconds.
+    key_cache_ttl_seconds: int = 30
+    #: validate-key calls per minute per client IP on keycache misses.
+    validate_key_budget_per_ip: int = Field(default=60, ge=1, le=10_000)
+    #: Serve a validated key from the stale record this long while the
+    #: budget is empty or the backend is down. le=300: a stale record
+    #: must
+    #: never outlive a revocation tombstone's minimum TTL.
+    validate_key_stale_serve_s: int = Field(default=300, ge=0, le=300)
+    #: Positive control for the log-secret scan: emits one fake-secret
+    #: line.
+    test_emit_canary_secret_log: bool = False
+    #: Secrets Manager prefix of the per-user downstream credentials.
+    mcp_secrets_prefix: str = "mcp"
+    #: Override for LocalStack and tests. Blank means real AWS.
+    aws_endpoint_url: str | None = None
+    #: Hit-only cache of a user's downstream credential, seconds.
+    vault_cache_ttl_seconds: int = 60
+
     @model_validator(mode="after")
     def _derive_legacy_rate_limit(self) -> Self:
         """Default the per-IP shared budget to 2x the per-user one."""
@@ -102,6 +148,16 @@ class Settings(BaseSettings):
 def load_settings() -> Settings:
     """Read settings from the environment."""
     return Settings()
+
+
+def env_name(field: str) -> str:
+    """Return the environment variable that sets settings field `field`.
+
+    Boot refusals name the variable to fix; deriving it from the prefix
+    keeps the message right after the project is renamed.
+    """
+    prefix = str(Settings.model_config.get("env_prefix", ""))
+    return f"{prefix}{field}".upper()
 
 
 def url_scheme(url: str | None) -> str:
@@ -127,3 +183,16 @@ def internal_verify(settings: Settings) -> ssl.SSLContext | bool:
     """
     pem = internal_ca_pem(settings)
     return ssl.create_default_context(cadata=pem) if pem else True
+
+
+def log_test_overrides(settings: Settings) -> None:
+    """Log one CRITICAL line per set `test_*` flag.
+
+    Derived from `model_fields`, not a hand-kept list: a new or renamed
+    `test_*` setting announces itself, so a flip gate can grep for them.
+    """
+    for field in type(settings).model_fields:
+        if field.startswith("test_") and getattr(settings, field):
+            logger.critical(
+                "TEST OVERRIDE ACTIVE: %s=%s", field, getattr(settings, field)
+            )

@@ -30,6 +30,14 @@ from fast_mcp_template.http.net import (
 )
 from fast_mcp_template.http.request_id import RequestIdMiddleware
 from fast_mcp_template.infra import redis_client
+from tests.conftest import InternalCA
+
+#: Serving over HTTP fails closed without auth; these tests are about the
+#: plumbing, so they take the one explicit escape (never allowed in production).
+LOCAL_NO_AUTH: dict[str, Any] = {
+    "dangerously_disable_auth": True,
+    "redis_url": "redis://localhost:1/0",
+}
 
 
 def _scope(xff: list[str], peer: str | None = "10.0.0.9") -> Scope:
@@ -200,7 +208,7 @@ def test_body_limit_floor_is_enforced_by_settings() -> None:
 
 
 def test_build_app_wires_request_id_body_limit_and_problem_errors() -> None:
-    settings = Settings(max_request_body_bytes=1024)
+    settings = Settings(max_request_body_bytes=1024, **LOCAL_NO_AUTH)
     client = TestClient(build_app(settings), raise_server_exceptions=False)
     nf = client.get("/nope")
     assert nf.status_code == 404
@@ -275,33 +283,12 @@ def test_url_scheme_and_internal_verify() -> None:
 # --- coverage of the remaining branches ------------------------------
 
 
-def _ca_pem() -> str:
-    from datetime import UTC, datetime, timedelta
-
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID
-
-    key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-ca")])
-    now = datetime.now(UTC)
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now)
-        .not_valid_after(now + timedelta(days=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), True)
-        .sign(key, hashes.SHA256())
+def test_rediss_with_an_internal_ca_uses_only_that_context(
+    internal_ca: InternalCA,
+) -> None:
+    s = Settings(
+        redis_url="rediss://redis.internal:6380/0", internal_ca_cert=internal_ca.ca_pem
     )
-    return cert.public_bytes(serialization.Encoding.PEM).decode()
-
-
-def test_rediss_with_an_internal_ca_uses_only_that_context() -> None:
-    s = Settings(redis_url="rediss://redis.internal:6380/0", internal_ca_cert=_ca_pem())
     client = redis_client.get_redis(s)
     assert client is not None
     pool = client.connection_pool

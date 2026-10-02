@@ -249,13 +249,15 @@ def clean_server_health() -> Any:
     redis_client.reset_redis_for_tests()
 
 
-def test_build_app_serves_health_and_adds_redis_only_when_configured(
+def test_build_app_serves_health_and_registers_the_redis_check_once(
     clean_server_health: Any,
 ) -> None:
-    c = TestClient(build_app(Settings()))
+    kw: dict[str, Any] = {
+        "dangerously_disable_auth": True,
+        "redis_url": "redis://localhost:1/0",
+    }
+    c = TestClient(build_app(Settings(**kw)))
     assert c.get("/health").status_code == 200
-    assert c.get("/health/ready").json() == {"status": "ok", "checks": []}
-    build_app(Settings(redis_url="redis://localhost:1/0"))
     assert server_health.names() == ["redis"]
-    build_app(Settings(redis_url="redis://localhost:1/0"))  # twice: no duplicates
+    build_app(Settings(**kw))  # twice: no duplicates
     assert server_health.names() == ["redis"]

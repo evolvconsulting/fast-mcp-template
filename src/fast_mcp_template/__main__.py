@@ -11,7 +11,8 @@ import sys
 import uvicorn
 from starlette.types import ASGIApp
 
-from fast_mcp_template.config import Settings, load_settings
+from fast_mcp_template.auth.dual import build_verifier, resolve_auth_mode
+from fast_mcp_template.config import Settings, load_settings, log_test_overrides
 from fast_mcp_template.http import build_http_middleware, wrap_http_app
 from fast_mcp_template.http.errors import register_error_handlers
 from fast_mcp_template.http.health import check_redis
@@ -22,16 +23,32 @@ from fast_mcp_template.server import build_server, health
 def build_app(settings: Settings) -> ASGIApp:
     """Return the whole ASGI app: request id and audit, then `http_app`.
 
+    Authentication is built here (`build_verifier`), so serving over
+    HTTP
+    without a configured credential refuses to boot.
+
+
     `host_origin_protection` and `allowed_hosts` are NOT passed:
     fastmcp then leaves its Host guard off, which is deliberate behind
     a load balancer that presents IP-literal and internal Host headers.
     Cross-origin abuse of a bearer-token API is a residual risk to
     record in your own threat model.
     """
+    log_test_overrides(settings)
+    # Boot refusals (a bad internal CA, named) run BEFORE `get_redis`
+    # builds
+    # the TLS pool, so the operator sees the variable to fix, not a pool
+    # error.
+    resolve_auth_mode(settings)
     redis = get_redis(settings)
     if redis is not None:
         health.add("redis", lambda: check_redis(redis))
-    inner = build_server().http_app(
+    server = build_server()
+    # Fails CLOSED at boot: no key, a weak key or a half-configured mode
+    # raises `AuthConfigError` naming the variable. None only for
+    # `dangerously_disable_auth` in legacy mode outside production.
+    server.auth = build_verifier(settings, redis)
+    inner = server.http_app(
         path=settings.mcp_path,
         stateless_http=True,
         middleware=build_http_middleware(settings, redis),

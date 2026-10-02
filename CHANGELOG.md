@@ -17,3 +17,8 @@ Notable changes to this project. Newest first.
   `AuthAuditMiddleware`, `FailureAlarm`, `ToolCallAuditMiddleware`;
   `wrap_http_app` now adds the audit layer, `build_http_middleware` the rate
   limit. Tests gain pytest-asyncio (`asyncio_mode = "auto"`) and fakeredis.
+- EC-639 step 6: authentication. `fast-mcp-template http` now fails closed:
+  it needs a configured credential and Redis, or the explicit
+  `MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH` escape (never in production).
+  Adds `DualModeVerifier`, `LegacyKeyVerifier`, the optional platform auth
+  (`PlatformKeyVerifier`, `key_format`, vault) and the boot refusals.
