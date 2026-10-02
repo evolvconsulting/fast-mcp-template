@@ -1,0 +1,27 @@
+{
+  "stage": "1-dual",
+  "note": "Stages 1 and 2: both credentials accepted (stage 2 adds legacy_sunset_at at dispatch). rollback_revision is the stage-0 revision: record it from the stage-0 run summary.",
+  "rollback_revision": null,
+  "load_balancers": [
+    "old_target_group_name",
+    "new_target_group_name"
+  ],
+  "environment": {
+    "AWS_DEFAULT_REGION": "us-east-2",
+    "MCP_TEMPLATE_AUTH_MODE": "dual",
+    "MCP_TEMPLATE_BE_BASE_URL": "https://backend.internal:8443",
+    "MCP_TEMPLATE_ENVIRONMENT": "production",
+    "MCP_TEMPLATE_MCP_HOST": "0.0.0.0",
+    "MCP_TEMPLATE_MCP_PATH": "/mcp",
+    "MCP_TEMPLATE_MCP_PORT": "8000",
+    "MCP_TEMPLATE_SERVER_KEY": "template",
+    "MCP_TEMPLATE_TRUSTED_PROXY_HOPS": "1",
+    "MCP_TEMPLATE_VALIDATE_KEY_BUDGET_PER_IP": "60"
+  },
+  "secrets": {
+    "MCP_TEMPLATE_API_KEY": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/api-key-AbCdEf",
+    "MCP_TEMPLATE_INTERNAL_AUTH_SECRET": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/internal-auth-secret-AbCdEf",
+    "MCP_TEMPLATE_REDIS_URL": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/redis-url-AbCdEf",
+    "MCP_TEMPLATE_INTERNAL_CA_CERT": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/internal-ca-cert-AbCdEf"
+  }
+}

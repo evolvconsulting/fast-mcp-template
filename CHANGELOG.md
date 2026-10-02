@@ -23,3 +23,5 @@ Notable changes to this project. Newest first.
   Adds `DualModeVerifier`, `LegacyKeyVerifier`, the optional platform auth
   (`PlatformKeyVerifier`, `key_format`, vault) and the boot refusals.
 - EC-639: `ConcurrencyLimitMiddleware` and `RequestBodyGuard`, wired in `build_app`.
+- EC-639 step 7a: production stage files, base task definition, and
+  `scripts/check-stage-files.py` (a Gate step) driven by `deploy/gateway.json`.

@@ -205,6 +205,9 @@ jobs:
       - name: Both ratchets' own controls still fire
         run: uv run --frozen bash docs/reviews/check-ratchet-controls.sh
 
+      - name: Production stage files are clean
+        run: uv run --frozen python scripts/check-stage-files.py
+
       - name: scripts/lib survives a host project's stock .gitignore
         run: bash scripts/check-scripts-lib-survives-gitignore.sh
 
