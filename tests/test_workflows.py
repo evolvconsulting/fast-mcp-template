@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -283,3 +284,41 @@ def test_the_probe_binds_itself_and_demands_access_denied_from_both_roles() -> N
     assert "for role in BUILD DEPLOY" in run
     # the token is never printed
     assert 'echo "${token}"' not in run and "echo $token" not in run
+
+
+# --- action pins (EC-639 L2) -------------------------------------------
+
+
+def _pins(*paths: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "check-action-pins.py"),
+            *map(str, paths),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_every_workflow_action_is_sha_pinned() -> None:
+    done = _pins(*sorted(WORKFLOWS.glob("*.y*ml")))
+    assert done.returncode == 0, done.stdout
+
+
+def test_ci_runs_the_pin_gate() -> None:
+    assert any(
+        "check-action-pins.py" in r for r in _run_steps(_load("ci.yml")["jobs"]["gate"])
+    )
+
+
+def test_the_pin_gate_fires_on_a_tag_and_exempts_local_actions(tmp_path: Path) -> None:
+    sha = "a" * 40
+    ok = tmp_path / "ok.yml"
+    ok.write_text(f"steps:\n  - uses: a/b@{sha} # v1\n  - uses: ./local\n")
+    assert _pins(ok).returncode == 0
+    for bad in ("a/b@v1", "a/b@main", f"a/b@{sha[:39]}", "a/b"):
+        f = tmp_path / "bad.yml"
+        f.write_text(f"steps:\n  - uses: {bad}\n")
+        assert _pins(f).returncode == 1, bad

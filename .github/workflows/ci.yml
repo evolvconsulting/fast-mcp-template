@@ -92,7 +92,7 @@ jobs:
   gate:
     runs-on: ubuntu-latest   # NEVER macOS (bills 10x) or Windows (2x)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           # fetch-depth: 0 is REQUIRED, not tidiness. check-design-freeze.py
           # resolves the SHA in DESIGN-FREEZE.txt, and a depth-1 checkout
@@ -101,9 +101,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 
@@ -208,6 +208,9 @@ jobs:
       - name: Production stage files are clean
         run: uv run --frozen python scripts/check-stage-files.py
 
+      - name: Every action is pinned to a commit SHA
+        run: uv run --frozen python scripts/check-action-pins.py
+
       - name: scripts/lib survives a host project's stock .gitignore
         run: bash scripts/check-scripts-lib-survives-gitignore.sh
 
@@ -228,11 +231,11 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
         with:
           languages: python
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
 
   workflow-lint:
     # THE TRUNK IS DERIVED, NOT NAMED - see the concurrency block above.
@@ -244,7 +247,7 @@ jobs:
       && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Lint the workflows
         run: |
           set -euo pipefail
@@ -426,7 +429,7 @@ jobs:
     outputs:
       code: ${{ steps.classify.outputs.code }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 2
       - name: Classify the pushed paths by role
@@ -465,14 +468,14 @@ jobs:
     needs: [changes]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 

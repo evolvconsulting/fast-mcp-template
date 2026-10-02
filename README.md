@@ -16,6 +16,13 @@ uv sync --frozen
 uv run --frozen fastmcp inspect src/fast_mcp_template/server.py:mcp
 ```
 
+## Upgrading (BREAKING: authentication is now required)
+
+`fast-mcp-template http` fails closed. Before upgrading, set `MCP_TEMPLATE_API_KEY` and
+`MCP_TEMPLATE_REDIS_URL`. In production (`MCP_TEMPLATE_ENVIRONMENT=production`) the Redis URL
+must be `rediss://` and `MCP_TEMPLATE_INTERNAL_CA_CERT` must be set. For local development only,
+`MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH=true` skips authentication; it is refused in production.
+
 ## Start a project from this
 
 **Greenfield takes under an hour. Adopting an EXISTING repository does not** —

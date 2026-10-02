@@ -15,7 +15,7 @@ name: oidc claims probe
 # the repository's `sub` template (repo, ref, job_workflow_ref), ends with
 # `:job_workflow_ref:<this file>`. The trusts pin that whole `sub`; a separate
 # `job_workflow_ref` condition KEY never matched in AWS STS (measured 2026-10-01 on
-# fast-mcp-ado). See infra/iam/README.md for the one-time `sub` template command.
+# fast-mcp-ado). See infra/README.md for the one-time `sub` template command.
 # No third-party action: curl, jq and the runner's aws CLI. The token is masked before anything
 # is echoed and is never printed; credentials from a (forbidden) success are discarded.
 

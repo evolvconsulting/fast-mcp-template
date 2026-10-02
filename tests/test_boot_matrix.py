@@ -240,6 +240,14 @@ def test_rediss_url_boots(make_settings: MakeSettings, internal_ca: Any) -> None
     assert resolve_auth_mode(make_settings(**kw)) == "dual"
 
 
+def test_production_refuses_a_plain_redis_url(make_settings: MakeSettings) -> None:
+    """EC-637: kills the `if False:` mutant on the production rediss:// refusal."""
+    kw = {**ok_kwargs("dual"), "environment": "production"}
+    assert kw["redis_url"].startswith("redis://")
+    with pytest.raises(AuthConfigError, match="must be a rediss://"):
+        resolve_auth_mode(make_settings(**kw))
+
+
 def test_disable_flag_is_the_only_path_to_no_verifier(
     make_settings: MakeSettings, caplog: pytest.LogCaptureFixture
 ) -> None:

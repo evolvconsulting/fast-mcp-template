@@ -29,23 +29,24 @@ fast-mcp-ado), so the workflow is bound through the repository's `sub` template 
 ONCE, then confirm with the `oidc claims probe` workflow, which also proves both roles REFUSE an
 unpinned workflow:
 
-UNVERIFIED: the command shape below was written from the resulting `sub` and GitHub's
-customisation API, not run (this repository's lane had no GitHub write access). Check it against
-the settings the fast-mcp-ado repository actually carries before using it.
+This is the live setting on evolvconsulting/fast-mcp-ado and evolvconsulting/evolv-coder-be (read
+with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` on 2026-10-02:
+`use_default=false`, `use_immutable_subject=true`, claim keys `repo`, `ref`, `job_workflow_ref`).
 
 ```bash
-# Apply (a GitHub write: needs repo admin). The id form needs `use_default: false`.
+# Apply (a GitHub write: needs repo admin).
 gh api -X PUT repos/OWNER/REPO/actions/oidc/customization/sub \
-  -F use_default=false -f 'include_claim_keys[]=repo' -f 'include_claim_keys[]=context' \
+  -F use_default=false -F use_immutable_subject=true \
+  -f 'include_claim_keys[]=repo' -f 'include_claim_keys[]=ref' \
   -f 'include_claim_keys[]=job_workflow_ref'
 # Rollback: back to the default template.
 gh api -X PUT repos/OWNER/REPO/actions/oidc/customization/sub -F use_default=true
 ```
 
 Verify the `sub` the probe prints against the trust BEFORE trusting either: the template above
-yields the `repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:...:job_workflow_ref:...` form only when the
-organisation and repository are configured for immutable ids; adjust the trust to whatever the
-probe prints.
+yields `repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/main:job_workflow_ref:OWNER/REPO/.github/workflows/FILE@refs/heads/main`,
+the form the trusts in `infra/iam/gha-*.trust.json` expect; if the probe prints anything else,
+adjust the trust to it.
 
 ## Other files
 

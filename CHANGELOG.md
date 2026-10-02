@@ -4,6 +4,15 @@ Notable changes to this project. Newest first.
 
 ## Unreleased
 
+- BREAKING: `fast-mcp-template http` now refuses to boot without authentication.
+  Required: `MCP_TEMPLATE_API_KEY` (a strong shared key) and `MCP_TEMPLATE_REDIS_URL`.
+  With `MCP_TEMPLATE_ENVIRONMENT=production` the Redis URL must be `rediss://` and
+  `MCP_TEMPLATE_INTERNAL_CA_CERT` must be set. The only way to run without a credential is
+  the dev-only `MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH` (refused in production). See
+  "Upgrading" in the README.
+- EC-639: every `uses:` in `ci.yml` is SHA-pinned and `scripts/check-action-pins.py`
+  (a Gate step) fails on any that is not.
+
 - EC-639 step 1: HTTP serving blocks (client IP, request id, body limit,
   problem+json errors, `fast-mcp-template http`) and the Redis client with
   internal-CA TLS.
