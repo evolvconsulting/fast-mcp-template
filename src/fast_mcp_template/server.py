@@ -19,8 +19,12 @@ from fastmcp import FastMCP
 
 from fast_mcp_template.config import load_settings
 from fast_mcp_template.http.health import HealthRegistry, register_health_routes
+from fast_mcp_template.tools.annotations import READ_ONLY
+from fast_mcp_template.tools.errors import raise_tool_error
 
-mcp: FastMCP = FastMCP("fast-mcp-template")
+# `mask_error_details=True` masks the text of any exception a tool did
+# not map itself, so a forgotten try/except cannot leak a secret.
+mcp: FastMCP = FastMCP("fast-mcp-template", mask_error_details=True)
 
 #: The readiness checks behind `/health/ready`. Register yours with
 #: `health.add(name, check)` (see `http/health.py`); the routes are
@@ -41,9 +45,13 @@ def greet(name: str) -> str:
     return f"{load_settings().greeting} {name}"
 
 
-@mcp.tool
+@mcp.tool(annotations=READ_ONLY)
 def ping(name: str) -> str:
     """Return a greeting. Replace this with the first real tool.
+
+    Every tool body follows this shape: do the work, and map ANY
+    failure through `raise_tool_error` so the caller sees a stable
+    message plus the request id, never exception text.
 
     Args:
         name: who to greet.
@@ -51,7 +59,10 @@ def ping(name: str) -> str:
     Returns:
         The configured greeting followed by `name`.
     """
-    return greet(name)
+    try:
+        return greet(name)
+    except Exception as exc:  # noqa: BLE001 - the mapping IS the contract
+        raise_tool_error(exc, operation="ping")
 
 
 def build_server() -> FastMCP:

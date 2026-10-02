@@ -11,3 +11,5 @@ Notable changes to this project. Newest first.
   (`HealthRegistry`), cached 5 s, each check capped at 2 s.
 - EC-639 step 3: free security CI (`security`, `weekly-lock-audit`),
   `main-only-by-pr.yml`, `pr-title.yml`; `check_advisories.py` is now wired.
+- EC-639 step 4: tool safety (`path_segment`, `raise_tool_error`, annotation
+  classes) and three per-tool sweeps, each with a control.
