@@ -1,0 +1,51 @@
+name: main moves only by PR
+
+# PROCESS CONTROL standing in for branch protection. On the GitHub free
+# plan a PRIVATE repository cannot have branch protection (HTTP 403).
+# This job makes a direct push to the trunk VISIBLE: it fails unless the
+# pushed commit belongs to a merged pull request.
+#
+# It cannot PREVENT the push, only fail loudly after it. Record that
+# residual in an ADR and in docs/OBLIGATIONS.md.
+#
+# THE TRUNK IS DERIVED, NOT NAMED, in the check below: it compares the
+# merged PR's base to `github.event.repository.default_branch`. The
+# `branches:` list is static YAML and must name your default branch,
+# exactly as in ci.yml (see the note on `on.push.branches` there).
+
+on:
+  push:
+    branches: [main, master, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # false: a cancelled check is not a failed one, and this control exists
+  # only to make a direct push visible.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  merged-pr-only:
+    # Only the default branch is the trunk; a push to any other listed
+    # branch is not this control's business.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless this commit is the merge of a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          TRUNK: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          merged=$(gh api "repos/${REPO}/commits/${SHA}/pulls" \
+            --jq "[.[] | select(.merged_at != null and .base.ref == \"${TRUNK}\")] | length")
+          if [ "${merged}" -lt 1 ]; then
+            echo "::error::${SHA} reached ${TRUNK} without a merged pull request"
+            exit 1
+          fi
+          echo "${SHA} belongs to ${merged} merged pull request(s)"

@@ -587,13 +587,6 @@ UNWIRED_BY_DECISION: dict[str, str] = {
         "while the script was byte for byte its backup - a harness "
         "that measured nothing announcing a dirty tree that was clean."
     ),
-    "check_advisories.py": (
-        "TURN ON together with a `pip-audit` step. It emits "
-        "pip-audit's --ignore-vuln flags from the advisory table in "
-        "pyproject and refuses an expired entry. Wired without the "
-        "audit step it is a flag generator connected to nothing, "
-        "which is exactly how it shipped inert once already."
-    ),
     "ci-harness-gate.sh": (
         "the LIBRARY every harness step should call, not a "
         "standalone gate. It reads a harness's exit code, its "

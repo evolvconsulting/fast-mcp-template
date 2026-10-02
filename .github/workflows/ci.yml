@@ -254,6 +254,117 @@ jobs:
           SHELLCHECK_OPTS=--severity=warning /tmp/actionlint -no-color
 
   # ---------------------------------------------------------------------
+  # SECURITY, free on a PRIVATE repository (EC-639, from fast-mcp-ado).
+  # CodeQL needs paid GitHub Advanced Security on a private repo, so the
+  # `codeql` job above only runs where it is free. These stand in for it:
+  # pip-audit, the SBOM, TruffleHog, ruff's S rules and the strict type
+  # gate. Pinned by commit SHA: this job reads the whole history.
+  # ---------------------------------------------------------------------
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0   # TruffleHog scans the full history
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      # --no-install-project: the project is not on PyPI, and
+      # `pip-audit --strict` turns that skip into a failure even on a
+      # clean lock (measured on fast-mcp-ado, EC-634). Every later
+      # `uv run` in this job is --no-sync.
+      - name: Install the dependencies from the frozen lock (not the project)
+        run: uv sync --frozen --no-install-project
+
+      # pip-audit has no severity threshold: any advisory fails, so a
+      # sanctioned response is a time-boxed single-advisory entry in
+      # pyproject (`scripts/check_advisories.py`). NEVER
+      # `uv run --with pip-audit` (unpinned, outside the lock).
+      - name: Dependency audit
+        run: |
+          set -uo pipefail
+          # GitHub runs every `run:` block as `bash -e {0}`; without
+          # this `rc=$?` is unreachable.
+          set +e
+          flags=$(uv run --frozen --no-sync python scripts/check_advisories.py); rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the advisory table is invalid or an entry expired"; exit 1
+          fi
+          echo "ignore flags from the table: ${flags:-<none>}"
+          # Unquoted ON PURPOSE: $flags is built by our own script from a
+          # table of advisory ids.
+          # shellcheck disable=SC2086
+          uv run --frozen --no-sync pip-audit $flags --strict || {
+            echo "::error::pip-audit found an advisory with no sanctioned ignore."
+            echo "::error::Fix or remove the dependency, or add a time-boxed single-advisory entry"
+            echo "::error::to [tool.fast-mcp-template.advisory-ignores]. NEVER a blanket ignore."
+            exit 1; }
+
+      # The SBOM comes from the FROZEN resolve (.venv): CycloneDX and SPDX.
+      - name: SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .venv
+          format: cyclonedx-json
+          artifact-name: sbom-ci.cdx.json
+          output-file: sbom-ci.cdx.json
+
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .venv
+          format: spdx-json
+          artifact-name: sbom-ci.spdx.json
+          output-file: sbom-ci.spdx.json
+
+      # FULL history on every run, UNVERIFIED findings included. Not the
+      # trufflehog action with `--only-verified`: that leaves a planted
+      # fake AWS key GREEN (exit 0; without it, exit 183), and the action
+      # scans a base..head range, which fails on a schedule event where
+      # both are equal. Pinned by image digest.
+      - name: Secret scan (TruffleHog 3.88.0, full history, unverified included)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${PWD}:/repo:ro" \
+            trufflesecurity/trufflehog:3.88.0@sha256:75c79b95b2d1f9b54c85b2cba14a7b9baa37bed0835485d6541de64f0fd667bb \
+            git file:///repo --no-update --fail
+
+  weekly-lock-audit:
+    # Dependabot gets no runner on a private org repository, so this is
+    # the scheduled re-resolve: every dependency in a scratch copy (the
+    # committed lock is never touched), then audit the result.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Show what an upgrade would change, then audit the upgraded resolve
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          uv lock --upgrade --dry-run || true
+          scratch="$(mktemp -d)"
+          mkdir "${scratch}/w"
+          git archive HEAD | tar -x -C "${scratch}/w"
+          cd "${scratch}/w"
+          uv lock --upgrade
+          uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements-upgraded.txt
+          cd - >/dev/null
+          uv run --frozen pip-audit --no-deps --disable-pip -r "${scratch}/w/requirements-upgraded.txt"
+
+  # ---------------------------------------------------------------------
   # ASSURANCE - weekly, on demand, or when a push touches code.
   # ---------------------------------------------------------------------
   changes:

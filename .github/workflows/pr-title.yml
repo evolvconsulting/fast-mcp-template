@@ -1,0 +1,32 @@
+name: pr title
+
+# `type(KEY-NNN): subject`, for example `feat(EC-639): add the thing`.
+# ADOPTERS: change TICKET_KEY below to your Jira project key. The title
+# reaches the shell only through env, never interpolated into the script.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The title is type(KEY-NNN) subject
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          TICKET_KEY: EC
+        run: |
+          set -euo pipefail
+          pattern="^(feat|fix|chore|docs|refactor|test|ci|perf)\(${TICKET_KEY}-[0-9]+\): .+"
+          if ! [[ "${PR_TITLE}" =~ ${pattern} ]]; then
+            echo "::error::PR title must match ${pattern}"
+            exit 1
+          fi
