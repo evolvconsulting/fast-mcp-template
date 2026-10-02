@@ -124,12 +124,42 @@ your width, the gate stays satisfiable.
 `.gitignore` has a stock Python `lib/` line, the `!scripts/lib/` re-inclusion
 this template ships must end up **after** it; git takes the last matching
 pattern. `scripts/check-scripts-lib-survives-gitignore.sh` proves both.
+**The same `lib/` line also hides `docs/reviews/lib/harness-state.sh`**, and
+this template re-includes only `scripts/lib/`. Measured on the fast-mcp-ado
+adoption (2026-09-29): the file never reached the index, and the only thing
+that noticed was `check-checkers-are-wired.py` reporting an exemption that
+names a missing file. Add `!docs/reviews/lib/` and `!docs/reviews/lib/**`
+at the end too. The gitignore proof script checks `scripts/lib/` only.
 
 **The policy tier arrives as ratchets, not floors.** `fail_under = 80` and a
 bare `--strict` gate are red by construction on any repository with history —
 the subject measured 7.45% coverage and 158 mypy errors. Both are now
 baselines you record on day one and may not regress. That is the difference
 between a gate that works from day one at 7% and one that gets switched off.
+
+**But the Gate's `Types` step is still a bare `uv run --frozen mypy`**, and on
+any repository that records a mypy baseline it is red by construction: it
+reports the baselined errors too, before the ratchet step ever runs. Measured
+on the fast-mcp-ado adoption: 280 errors, exit 1, while the ratchet itself was
+green. Hold `src` at zero with `uv run --frozen mypy src` and let
+`check-mypy-ratchet.py` cover everything else.
+
+**Three more steps are red on day one, before you have written anything.**
+`check-design-freeze.py` exits 2 until `docs/DESIGN.md` and its freeze exist,
+so either write and freeze the design in the adoption, or unwire that step
+with an `UNWIRED_BY_DECISION` row until you do. If you unwire it, the wiring
+checker's `--self-test` fails too: its `_WIRED_SUBJECT` constant names
+`check-design-freeze.py` as the checker it knows is wired, so repoint it at
+another wired checker such as `check-obligations.py`. And
+`check-adr-numbers.py` needs `docs/adr/README.md` (the index), not only
+`0000-template.md`: copy both.
+
+**Adopting a repository whose code you must not touch yet.** The wider ruff
+selection surfaced 95 findings in fast-mcp-ado's existing `src/`, all
+docstrings, annotations and `Any`. When those files belong to later work, do
+not blanket-ignore the rules: add a `[tool.ruff.lint.per-file-ignores]` row
+per existing file naming only the codes it failed, so every NEW file gets the
+full selection and each row can be deleted when its file is fixed.
 
 **Carried machinery is not trusted machinery until it has run to a
 verdict HERE.** Everything under `docs/reviews/` and `scripts/` arrived from
@@ -166,6 +196,14 @@ way on this template a week after extraction, and neither was found by reading.
   Emptying one carried dictionary here stopped a checker refusing on a missing
   file and revealed that its next arm had been reporting a setting as "read
   now" that this project has never had.
+- **Three carried members still misbehave on an adopter**, found on
+  fast-mcp-ado (2026-09-29), all DISABLED so none turns the Gate red:
+  `check-design-citation-shape.py` crashes with a raw `FileNotFoundError`
+  traceback when `docs/DESIGN-FREEZE.txt` is absent instead of refusing
+  cleanly; `check-cross-references.py` requires `docs/data-inventory.md` and
+  `docs/research/STANDARDS.md`, paths from the source project;
+  `check-review-coverage.py` still pins a base commit an adopter has never
+  held.
 - **Run the sweep in a scratch worktree, never in a tree holding uncommitted
   work.** Some carried machinery WRITES: three members here rewrite a file and
   restore it, and a control that restores by `git checkout --` cannot tell a
