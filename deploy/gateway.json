@@ -1,0 +1,32 @@
+{
+  "_comment": "The ONE file an adopter edits to name their gateway for the deploy checks. scripts/check-stage-files.py reads it; the stage files and taskdef.base.json must agree with it. The account (000000000000) and the secret ARNs are PLACEHOLDERS: replace them before the first deploy.",
+  "account": "000000000000",
+  "region": "us-east-2",
+  "container": "fast-mcp-template",
+  "ecr_repository": "fast-mcp-template",
+  "env_prefix": "MCP_TEMPLATE_",
+  "ports": [
+    8000
+  ],
+  "required_env": {
+    "ENVIRONMENT": "production"
+  },
+  "required_env_exact": {
+    "AWS_DEFAULT_REGION": "us-east-2"
+  },
+  "required_secrets": [
+    "REDIS_URL",
+    "INTERNAL_CA_CERT"
+  ],
+  "forbidden_env": [
+    "DANGEROUSLY_DISABLE_AUTH"
+  ],
+  "forbidden_env_exact": [
+    "AWS_ENDPOINT_URL",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY"
+  ],
+  "not_secret_shaped": [
+    "SERVER_KEY"
+  ]
+}

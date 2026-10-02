@@ -1,0 +1,24 @@
+{
+  "stage": "0-legacy",
+  "note": "Stage 0: shared key only, parity with what runs today. rollback_revision is the live task definition revision you roll back to: record it here.",
+  "rollback_revision": null,
+  "load_balancers": [
+    "old_target_group_name",
+    "new_target_group_name"
+  ],
+  "environment": {
+    "AWS_DEFAULT_REGION": "us-east-2",
+    "MCP_TEMPLATE_AUTH_MODE": "legacy",
+    "MCP_TEMPLATE_ENVIRONMENT": "production",
+    "MCP_TEMPLATE_MCP_HOST": "0.0.0.0",
+    "MCP_TEMPLATE_MCP_PATH": "/mcp",
+    "MCP_TEMPLATE_MCP_PORT": "8000",
+    "MCP_TEMPLATE_SERVER_KEY": "template",
+    "MCP_TEMPLATE_TRUSTED_PROXY_HOPS": "1"
+  },
+  "secrets": {
+    "MCP_TEMPLATE_API_KEY": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/api-key-AbCdEf",
+    "MCP_TEMPLATE_REDIS_URL": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/redis-url-AbCdEf",
+    "MCP_TEMPLATE_INTERNAL_CA_CERT": "arn:aws:secretsmanager:us-east-2:000000000000:secret:fast-mcp-template/production/internal-ca-cert-AbCdEf"
+  }
+}

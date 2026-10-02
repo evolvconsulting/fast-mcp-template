@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "keep the 10 newest sha- images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": [
+          "sha-"
+        ],
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}

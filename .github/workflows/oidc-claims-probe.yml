@@ -1,0 +1,84 @@
+name: oidc claims probe
+
+# Prints ONLY the claims the deploy trust pins, for a human to compare, then proves the workflow
+# binding is real: it asserts its own `sub` ends with this workflow's file, then tries to assume
+# BOTH roles with that token and REQUIRES AccessDenied from each, because neither trust names
+# this workflow. It never holds a role.
+#
+# ADOPTERS: replace WORKFLOW_REF below with `<owner>/<repo>/.github/workflows/oidc-claims-probe.yml@refs/heads/<default branch>`
+# and set the repository variables AWS_REGION, AWS_BUILD_ROLE_ARN and AWS_DEPLOY_ROLE_ARN.
+#
+# `id-token: write` here is a documented exception (a job that assumes no role MUST NOT carry
+# it): the job exists to mint the token and read it.
+#
+# `sub` is the immutable form (owner and repository ids, `ref:refs/heads/<branch>`) and, with
+# the repository's `sub` template (repo, ref, job_workflow_ref), ends with
+# `:job_workflow_ref:<this file>`. The trusts pin that whole `sub`; a separate
+# `job_workflow_ref` condition KEY never matched in AWS STS (measured 2026-10-01 on
+# fast-mcp-ado). See infra/README.md for the one-time `sub` template command.
+# No third-party action: curl, jq and the runner's aws CLI. The token is masked before anything
+# is echoed and is never printed; credentials from a (forbidden) success are discarded.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request a token, print the pinned claims, prove both roles refuse this workflow
+        run: |
+          set -euo pipefail
+          resp="$(curl -fsS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+          token="$(jq -er '.value' <<<"${resp}")"
+          echo "::add-mask::${token}"
+          payload="$(cut -d. -f2 <<<"${token}" | tr '_-' '/+')"
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="${payload}="; done
+          claims="$(base64 -d <<<"${payload}")"
+          jq '{job_workflow_ref, actor_id, repository_id, repository_owner_id, sub, ref}' <<<"${claims}"
+
+          # BINDING proof: the sub must end with THIS workflow's own file, so a refusal
+          # below is a refusal of a correctly bound sub and not of a malformed one.
+          want=":job_workflow_ref:${WORKFLOW_REF}"
+          jq -e --arg want "${want}" '.sub | endswith($want)' <<<"${claims}" >/dev/null \
+            || { echo "::error::sub does not end with the probe's own job_workflow_ref"; exit 1; }
+
+          # NEGATIVE proof: this workflow is pinned by neither role, so both assumptions
+          # MUST be refused with AccessDenied. A success, or any other error, fails the job.
+          # Credentials go to /dev/null; the first error lines are printed only when the
+          # error is not AccessDenied (an AWS error never carries the token).
+          tokfile="$(mktemp)"
+          trap 'rm -f "${tokfile}"' EXIT
+          printf '%s' "${token}" >"${tokfile}"
+          for role in BUILD DEPLOY; do
+            arn_var="${role}_ROLE_ARN"
+            if out="$(aws sts assume-role-with-web-identity \
+                --region "${AWS_REGION}" \
+                --role-arn "${!arn_var}" \
+                --role-session-name probe-negative \
+                --web-identity-token "file://${tokfile}" 2>&1 >/dev/null)"; then
+              echo "::error::${role}: assume-role SUCCEEDED for the unpinned probe workflow"
+              exit 1
+            fi
+            case "${out}" in
+              *"(AccessDenied)"*) echo "${role}: refused with AccessDenied (expected)" ;;
+              *)
+                echo "::error::${role}: refused, but not with AccessDenied"
+                printf '%s\n' "${out}" | cut -c1-300 | sed -n '1,3p'
+                exit 1 ;;
+            esac
+          done
+        env:
+          WORKFLOW_REF: OWNER/REPO/.github/workflows/oidc-claims-probe.yml@refs/heads/main
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          BUILD_ROLE_ARN: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}

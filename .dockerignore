@@ -1,0 +1,12 @@
+.git
+.venv
+.github
+docs
+tests
+deploy
+infra
+scripts
+__pycache__
+*.pyc
+coverage.json
+.coverage

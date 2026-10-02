@@ -16,6 +16,16 @@ uv sync --frozen
 uv run --frozen fastmcp inspect src/fast_mcp_template/server.py:mcp
 ```
 
+## Upgrading (BREAKING: authentication is now required)
+
+`fast-mcp-template http` fails closed. Before upgrading, with the default
+`MCP_TEMPLATE_AUTH_MODE=legacy`, set `MCP_TEMPLATE_API_KEY` and `MCP_TEMPLATE_REDIS_URL`.
+`dual` and `platform` also need `MCP_TEMPLATE_BE_BASE_URL` (https in production) and a strong
+`MCP_TEMPLATE_INTERNAL_AUTH_SECRET`, and `platform` refuses to boot if `MCP_TEMPLATE_API_KEY`
+is set. In production (`MCP_TEMPLATE_ENVIRONMENT=production`) the Redis URL
+must be `rediss://` and `MCP_TEMPLATE_INTERNAL_CA_CERT` must be set. For local development only,
+`MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH=true` skips authentication; it is refused in production.
+
 ## Start a project from this
 
 **Greenfield takes under an hour. Adopting an EXISTING repository does not** —
@@ -124,12 +134,42 @@ your width, the gate stays satisfiable.
 `.gitignore` has a stock Python `lib/` line, the `!scripts/lib/` re-inclusion
 this template ships must end up **after** it; git takes the last matching
 pattern. `scripts/check-scripts-lib-survives-gitignore.sh` proves both.
+**The same `lib/` line also hides `docs/reviews/lib/harness-state.sh`**, and
+this template re-includes only `scripts/lib/`. Measured on the fast-mcp-ado
+adoption (2026-09-29): the file never reached the index, and the only thing
+that noticed was `check-checkers-are-wired.py` reporting an exemption that
+names a missing file. Add `!docs/reviews/lib/` and `!docs/reviews/lib/**`
+at the end too. The gitignore proof script checks `scripts/lib/` only.
 
 **The policy tier arrives as ratchets, not floors.** `fail_under = 80` and a
 bare `--strict` gate are red by construction on any repository with history —
 the subject measured 7.45% coverage and 158 mypy errors. Both are now
 baselines you record on day one and may not regress. That is the difference
 between a gate that works from day one at 7% and one that gets switched off.
+
+**But the Gate's `Types` step is still a bare `uv run --frozen mypy`**, and on
+any repository that records a mypy baseline it is red by construction: it
+reports the baselined errors too, before the ratchet step ever runs. Measured
+on the fast-mcp-ado adoption: 280 errors, exit 1, while the ratchet itself was
+green. Hold `src` at zero with `uv run --frozen mypy src` and let
+`check-mypy-ratchet.py` cover everything else.
+
+**Three more steps are red on day one, before you have written anything.**
+`check-design-freeze.py` exits 2 until `docs/DESIGN.md` and its freeze exist,
+so either write and freeze the design in the adoption, or unwire that step
+with an `UNWIRED_BY_DECISION` row until you do. If you unwire it, the wiring
+checker's `--self-test` fails too: its `_WIRED_SUBJECT` constant names
+`check-design-freeze.py` as the checker it knows is wired, so repoint it at
+another wired checker such as `check-obligations.py`. And
+`check-adr-numbers.py` needs `docs/adr/README.md` (the index), not only
+`0000-template.md`: copy both.
+
+**Adopting a repository whose code you must not touch yet.** The wider ruff
+selection surfaced 95 findings in fast-mcp-ado's existing `src/`, all
+docstrings, annotations and `Any`. When those files belong to later work, do
+not blanket-ignore the rules: add a `[tool.ruff.lint.per-file-ignores]` row
+per existing file naming only the codes it failed, so every NEW file gets the
+full selection and each row can be deleted when its file is fixed.
 
 **Carried machinery is not trusted machinery until it has run to a
 verdict HERE.** Everything under `docs/reviews/` and `scripts/` arrived from
@@ -166,6 +206,14 @@ way on this template a week after extraction, and neither was found by reading.
   Emptying one carried dictionary here stopped a checker refusing on a missing
   file and revealed that its next arm had been reporting a setting as "read
   now" that this project has never had.
+- **Three carried members still misbehave on an adopter**, found on
+  fast-mcp-ado (2026-09-29), all DISABLED so none turns the Gate red:
+  `check-design-citation-shape.py` crashes with a raw `FileNotFoundError`
+  traceback when `docs/DESIGN-FREEZE.txt` is absent instead of refusing
+  cleanly; `check-cross-references.py` requires `docs/data-inventory.md` and
+  `docs/research/STANDARDS.md`, paths from the source project;
+  `check-review-coverage.py` still pins a base commit an adopter has never
+  held.
 - **Run the sweep in a scratch worktree, never in a tree holding uncommitted
   work.** Some carried machinery WRITES: three members here rewrite a file and
   restore it, and a control that restores by `git checkout --` cannot tell a
@@ -295,6 +343,32 @@ Ship **zero** numbered ADRs from here. `docs/adr/0000-template.md` is the shape.
 
 > An ADR records a decision that constrains future code. **A measurement is not
 > an ADR.** Write the measurement down where it was made and cite it.
+
+## Building blocks
+
+Folded in from the `fast-mcp-ado` rebuild (EC-639), one block per
+commit, each generalised (no ADO names) and shipped with its tests.
+Delete the ones your gateway does not need; each is a module, not a
+framework.
+
+| Block | Where | What it gives you |
+|---|---|---|
+| HTTP serving | `http/net.py`, `http/request_id.py`, `http/body_limit.py`, `http/errors.py`, `http/__init__.py`, `__main__.py` | `fast-mcp-template http` runs the app under uvicorn. Client IP from `X-Forwarded-For` by trusted hop count (Nth from the right, IPv6 folded to /64 for rate keys); a UUID v4 `X-Request-ID` on every response, including 401s (the middleware wraps the WHOLE app, because fastmcp runs auth outside `middleware=`); 413 problem+json on an oversized body (fastmcp enforces none); RFC 9457 problem+json for 404, 405 and 500 with no detail leak. |
+| Redis client | `infra/redis_client.py`, `config.py` | One process-wide client with 2 s connect and socket timeouts (no timeout meant a 127 s hang and a crash loop, EC-600). `rediss://` trusts ONLY `MCP_TEMPLATE_INTERNAL_CA_CERT` (the `InternalCAConnection` pattern, EC-637), never the system store, and refuses to boot without it. `redis_url` blank gives `None`. |
+| Health | `http/health.py`, `server.py` | `/health`, `/health/live` (always 200) and `/health/ready` (unauthenticated: 200, or a 503 problem+json naming only the failed checks, never exception text). The check list is pluggable: `health.add("vault", my_async_check)` where a check is an async callable returning `CheckResult`. Checks run concurrently, each capped at 2 s; a raise or a hang is a failed check. The answer is cached 5 s with one refresh in flight. Stock checks: `check_redis` (PING plus eviction-policy warning) and `check_http` (a backend liveness probe). `build_app` adds the Redis check when `MCP_TEMPLATE_REDIS_URL` is set. |
+| Free security CI | `ci.yml` jobs `security` and `weekly-lock-audit`, `scripts/check_advisories.py` | For a PRIVATE repository (CodeQL is paid there). `pip-audit --strict` over the frozen lock, with sanctioned ignores only as a time-boxed single-advisory entry in `[tool.fast-mcp-template.advisory-ignores]`; CycloneDX and SPDX SBOMs from the frozen resolve; TruffleHog 3.88.0 by image digest over the full history with unverified findings included (`--only-verified` leaves a planted fake key green). `weekly-lock-audit` is scheduled-only: it re-resolves every dependency in a scratch copy and audits that, because Dependabot gets no runner on a private org repo. Actions in these jobs are pinned by commit SHA. |
+| Process controls | `.github/workflows/main-only-by-pr.yml`, `pr-title.yml` | `main-only-by-pr` fails when the trunk moves without a merged PR (branch protection stand-in on a free private org); the trunk is derived from `github.event.repository.default_branch`, only the static `branches:` list needs your branch. `pr-title` enforces `type(KEY-NNN): subject`; set `TICKET_KEY` to your Jira project. Concurrency is set per workflow, not by one rule: the PR-title check cancels, the trunk check never does, and `ci.yml` cancels only off the trunk. |
+| Tool safety | `tools/validation.py`, `tools/errors.py`, `tools/annotations.py`, `tests/test_tool_safety.py` | `path_segment(value, field=...)` validates and percent-encodes any caller value interpolated into an upstream URL path (`project="../otherorg"` otherwise reaches another tenant; every REST-proxy gateway has this bug class). `raise_tool_error(exc, operation=...)` turns any tool failure into a `ToolError` with a stable message plus the request id; only types you `register_safe_error` pass their text, everything else is logged with its traceback and replaced by `GENERIC_TOOL_ERROR` (reword it). The server is built with `mask_error_details=True` as the backstop. Five annotation classes (`READ_ONLY`, `WRITE_IDEMPOTENT`, `CREATE`, `DESTRUCTIVE`, `DESTRUCTIVE_NON_IDEMPOTENT`) with the verb-to-class guide. Three per-tool SWEEPS cover every tool you add for free: no tool leaks exception text, every tool declares all four hints (and destructive ones are on a hand-written list), and no tool interpolates a raw argument into a path template. Each sweep carries a control that feeds it a known-bad source and requires it to object. |
+| Limits and audit | `limits/ratelimit.py` + `ratelimit.lua`, `limits/middleware.py`, `http/audit.py`, `auth/types.py`, `auth/claims.py` | A Redis Lua token bucket (`take_token`; headers `RateLimit-*` and `X-RateLimit-*`, 429 `/problems/rate-limited`, a refusal consumes nothing). On a Redis error it falls back to a bounded process-local bucket with a throttled `rate_limit_fail_open` WARNING; it never opens completely. `RateLimitMiddleware` buckets shared-key (`legacy`) traffic per client IP and per-user (`platform`) traffic per user AND per IP (own key, so the two never share a refill); the user capacity comes from the `rate_limit` claim, clamped to 10x the default. The budget is in REQUESTS: `REQUESTS_PER_TOOL_CALL = 6` is MEASURED (`tests/test_rate_limit_multiplier.py` fails if a transport change moves it). Set `MCP_TEMPLATE_SERVER_KEY` so gateways sharing a Redis do not share buckets. `AuthAuditMiddleware` writes one `mcp_auth` line per MCP request (`http_access` for the rest, `/health*` at DEBUG) and can add RFC 9745 / RFC 8594 `Deprecation`, `Sunset` and `Link` headers for a retiring credential; `FailureAlarm` alerts once per 401 burst and never blocks (a latch lets one attacker lock out an office NAT); `ToolCallAuditMiddleware` writes one `mcp_tool_call` line per tool call. Tests use `fakeredis[lua]`; plain fakeredis cannot run the script. |
+| Authentication (and the optional Evolv platform auth) | `auth/types.py`, `auth/legacy.py`, `auth/dual.py`, `auth/platform.py`, `auth/key_format.py`, `auth/vault.py`, `config.py` | `fast-mcp-template http` now builds authentication and REFUSES TO BOOT without it: `build_verifier` raises `AuthConfigError` naming the variable to fix. The only unauthenticated path is `MCP_TEMPLATE_DANGEROUSLY_DISABLE_AUTH=true` in `legacy` mode outside production, and it logs CRITICAL. `MCP_TEMPLATE_AUTH_MODE` is `legacy` (shared key, `MCP_TEMPLATE_API_KEY`), `dual` (the cutover stage) or `platform` (per-user `evc_live_` keys only). `DualModeVerifier` sends each bearer token by its SHAPE to exactly one verifier: an `evc_` token never reaches the legacy verifier. Boot refusals: a missing, short, patterned or `evc_`-shaped shared key; a Redis URL missing in any mode; dual/platform without `BE_BASE_URL` and a strong `INTERNAL_AUTH_SECRET`; and in production a non-`rediss://` Redis, a non-https backend, a missing or unparseable `INTERNAL_CA_CERT`. `PlatformKeyVerifier` does an offline CRC check, then a signed Redis keycache with a negative cache, the backend `validate-key` over `X-Internal-Auth` (rotation: `INTERNAL_AUTH_SECRET_NEXT`), a per-IP validate-key budget, prefix lockout (per-IP is alert-only), a circuit breaker, and a bounded stale-serve; it fails closed. `key_format.py` is BYTE-IDENTICAL to its sibling copies (a test pins its hash): never edit it here. `auth/vault.py` reads a user's downstream credential from Secrets Manager (`{prefix}/users/{user_id}/{server_key}`) behind a 5 s failure budget and a hit-only cache; boto3 is the `platform-auth` extra (`uv sync --extra platform-auth`), and `check_vault` is a ready-made check for the health registry. The boot-matrix, dispatch and verifier matrices are table-driven: reuse them for any gateway with an auth-mode switch. |
+| Concurrency limit and slow-body guard | `http/concurrency.py` | `ConcurrencyLimitMiddleware` answers 503 problem+json (jittered `Retry-After`) once 100 requests are in flight, with per-client, per-credential (`limit // 2` over any number of IPs) and unverified-token caps so one holder cannot take every slot. `/health*` is never counted or refused, and credential headers are stripped from it so auth never calls the backend for an uncounted request; a websocket handshake is refused before auth. "Verified" is the auth layer's verdict (`scope["user"].is_authenticated`), never a status code. `RequestBodyGuard` marks a response sent with the body unread `Connection: close` and answers 408 to a body still incomplete at a deadline that grows with the declared length (base 10 s, 64 KiB/s, capped 60 s), because uvicorn has no body-read deadline. `build_app` wires both. NOT folded: the second TLS listener and `LifespanBound` (graceful-shutdown budget) from fast-mcp-ado's `__main__`. |
+| Production stage files | `deploy/gateway.json`, `deploy/taskdef.base.json`, `deploy/stages/*.json`, `scripts/check-stage-files.py` | The staged-cutover shape (`0-legacy`, `1-dual`, `3-platform`): a committed JSON stage file rendered over one base task definition, applied by an orchestrator. `check-stage-files.py` (a Gate step) refuses what must never reach production: any `TEST_*` variable, the unauthenticated escape hatch set to ANYTHING, a LocalStack endpoint or static AWS keys, `LOG_LEVEL=DEBUG`, a secret-shaped name under `environment`, a `secrets` entry that is not a Secrets Manager ARN in your account and region; and requires what feeds a boot control (`ENVIRONMENT=production`, Redis and the internal CA as secrets, a `stopTimeout` covering the graceful shutdown, ARM64, a valid Fargate pair, ECS exec off). The gateway-specific names are in `deploy/gateway.json`: edit that, the base task definition and the stage files together. The account (`000000000000`) and ARNs are PLACEHOLDERS. |
+| Build, deploy and the OIDC workflow-bound pattern | `Dockerfile`, `.github/workflows/build-image.yml`, `deploy.yml`, `oidc-claims-probe.yml`, `scripts/render-taskdef.py`, `infra/`, `docs/runbooks/rollback.md` | A digest-pinned, non-root ARM64 image; `ci.yml`'s `image` job builds it, scans it, proves it runs as uid 10001, REFUSES TO BOOT with no credential and serves `/health` once configured. `build-image.yml` runs every step that can fail BEFORE the push (ECR tags are immutable, so a failure after it can only be fixed by a new commit). `deploy.yml` is dispatch-only: stage files clean and inputs validated BEFORE any role is assumed, the image pinned BY DIGEST, a circuit breaker with rollback, the rollback target printed first. Two OIDC roles, each trust pinned to ONE workflow file through the immutable `sub` (see `infra/README.md`); `oidc-claims-probe.yml` prints the claims and proves both roles REFUSE an unpinned workflow. The AWS values in `infra/` and `deploy/` are PLACEHOLDERS (`000000000000`, `OWNER`, ...): nothing here has been applied. Not folded: the ado deploy orchestration (`deploy_service.py`: listener-weight and drift checks), the second TLS listener and the ADR set. |
+
+Composition lives in two functions only: `wrap_http_app` (around the
+whole app) and `build_http_middleware` (the list for
+`mcp.http_app(middleware=...)`). Later blocks join those, so the order
+is written in one place.
 
 ## Layout
 

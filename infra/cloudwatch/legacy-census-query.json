@@ -1,0 +1,7 @@
+{
+  "name": "fast-mcp-template legacy census (per day)",
+  "logGroupNames": [
+    "/ecs/fast-mcp-template"
+  ],
+  "queryString": "filter event = \"mcp_auth\" and auth_path = \"legacy\" | stats count(*) as legacy_requests, count_distinct(client_ip) as distinct_client_ips by bin(1d) as day | sort day desc"
+}

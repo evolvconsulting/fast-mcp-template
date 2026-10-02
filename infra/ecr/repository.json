@@ -1,0 +1,5 @@
+{
+  "repositoryName": "fast-mcp-template",
+  "imageTagMutability": "IMMUTABLE",
+  "note": "Desired state. Applied by an operator: aws ecr put-image-tag-mutability --repository-name fast-mcp-template --image-tag-mutability IMMUTABLE. Rollback: the same command with MUTABLE."
+}

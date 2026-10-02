@@ -14,11 +14,18 @@ authors = [{ name = "evolv Consulting" }]
 # own now and naming it would only be a second pin to forget.
 dependencies = [
   "fastmcp==4.0.3",
+  "httpx2==2.12.0",
   "pydantic-settings==2.15.0",
+  "redis==8.1.0",
 ]
 
 [project.scripts]
 fast-mcp-template = "fast_mcp_template.__main__:main"
+
+[project.optional-dependencies]
+platform-auth = [
+    "boto3>=1.34",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -51,6 +58,12 @@ dev = [
   "pyyaml>=6",
   "types-PyYAML>=6",
   "pre-commit>=3.7",
+  "cryptography>=50.0.1",
+  "pip-audit==2.10.1",
+  "pytest-asyncio>=0.24",
+  "fakeredis[lua]>=2.23",
+  "boto3>=1.34",
+  "moto[secretsmanager]>=5.0",
 ]
 
 # ---------------------------------------------------------------------------
@@ -112,6 +125,10 @@ python_functions = ["test_*"]
 # an arm by marker, a typo in the marker name selects nothing and the
 # run goes green having tested less than it claimed.
 addopts = ["-v", "--strict-markers", "--tb=short", "-ra"]
+
+# Async tests run without a per-test marker. An ADOPTER pasting this block
+# over their own pyproject must KEEP this line (see the adoption note above).
+asyncio_mode = "auto"
 
 markers = [
   "credentialed: needs a real upstream credential. NEVER run in CI",
@@ -201,7 +218,7 @@ extend-exclude = ["**/*.md"]
 # width, delete this block and run `ruff format` once. That is a decision
 # with a diff, which is the point.
 [tool.ruff.format]
-exclude = ["docs/reviews/**", "scripts/**"]
+exclude = ["docs/reviews/**", "scripts/**", "src/fast_mcp_template/auth/key_format.py"]
 
 [tool.ruff.lint]
 select = [
@@ -232,7 +249,9 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
   "S101", "S603", "S607",  # asserts and subprocess are the point in a test
-  "D103", "ANN",           # undocumented, unannotated tests are fine
+  "D", "ANN",              # undocumented, unannotated tests are fine
+  "W505", "E501",          # test prose and fixture strings: the column caps are for src
+  "S105", "S106",          # a fake token in a fixture is not a leaked secret
   "N802",                  # test names may use CAPS for emphasis
 ]
 # A checker script is a CLI: printing IS its interface, and its refusal
@@ -244,6 +263,13 @@ convention = "google"
   "ANN",                   # an unannotated probe helper is fine, as in tests/*
 ]
 "scripts/**" = ["S101", "S603", "S607", "ANN"]
+# Ported from fast-mcp-ado (EC-639) with their comment prose intact: the
+# long comments carry the incident history for each rule. Re-wrap a file
+# and delete it from this list the next time you edit it. `key_format.py`
+# must stay BYTE-IDENTICAL to its three sibling copies (a test pins its
+# hash), so it can never be re-wrapped here.
+"src/fast_mcp_template/auth/{platform,dual,vault,key_format}.py" = ["W505", "E501"]
+"src/fast_mcp_template/http/concurrency.py" = ["W505", "E501"]
 
 # ---------------------------------------------------------------------------
 # FULL STRICTNESS STAYS ON, and the setting is NOT the gate on its own.
@@ -269,3 +295,8 @@ strict = true
 # the wired checkers; leaving them out is how half of them went
 # unchecked here for weeks.
 files = ["src", "tests", "docs/reviews", "scripts"]
+
+# boto3 and botocore ship no stubs and no py.typed marker.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
