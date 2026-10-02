@@ -18,6 +18,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from fast_mcp_template.config import load_settings
+from fast_mcp_template.http.audit import ToolCallAuditMiddleware
 from fast_mcp_template.http.health import HealthRegistry, register_health_routes
 from fast_mcp_template.tools.annotations import READ_ONLY
 from fast_mcp_template.tools.errors import raise_tool_error
@@ -25,6 +26,9 @@ from fast_mcp_template.tools.errors import raise_tool_error
 # `mask_error_details=True` masks the text of any exception a tool did
 # not map itself, so a forgotten try/except cannot leak a secret.
 mcp: FastMCP = FastMCP("fast-mcp-template", mask_error_details=True)
+# One `mcp_tool_call` line per tool call; registered once, here, so
+# building the app twice never doubles the line.
+mcp.add_middleware(ToolCallAuditMiddleware())
 
 #: The readiness checks behind `/health/ready`. Register yours with
 #: `health.add(name, check)` (see `http/health.py`); the routes are

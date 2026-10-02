@@ -55,6 +55,8 @@ dev = [
   "pre-commit>=3.7",
   "cryptography>=50.0.1",
   "pip-audit==2.10.1",
+  "pytest-asyncio>=0.24",
+  "fakeredis[lua]>=2.23",
 ]
 
 # ---------------------------------------------------------------------------
@@ -116,6 +118,10 @@ python_functions = ["test_*"]
 # an arm by marker, a typo in the marker name selects nothing and the
 # run goes green having tested less than it claimed.
 addopts = ["-v", "--strict-markers", "--tb=short", "-ra"]
+
+# Async tests run without a per-test marker. An ADOPTER pasting this block
+# over their own pyproject must KEEP this line (see the adoption note above).
+asyncio_mode = "auto"
 
 markers = [
   "credentialed: needs a real upstream credential. NEVER run in CI",
@@ -236,7 +242,9 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
   "S101", "S603", "S607",  # asserts and subprocess are the point in a test
-  "D103", "ANN",           # undocumented, unannotated tests are fine
+  "D", "ANN",              # undocumented, unannotated tests are fine
+  "W505", "E501",          # test prose and fixture strings: the column caps are for src
+  "S105", "S106",          # a fake token in a fixture is not a leaked secret
   "N802",                  # test names may use CAPS for emphasis
 ]
 # A checker script is a CLI: printing IS its interface, and its refusal

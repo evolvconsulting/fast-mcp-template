@@ -209,9 +209,16 @@ def test_build_app_wires_request_id_body_limit_and_problem_errors() -> None:
     assert big.status_code == 413  # the body limit runs before the app
 
 
-def test_middleware_list_holds_the_body_limit_only() -> None:
-    mw = build_http_middleware(Settings())
-    assert [m.cls for m in mw] == [BodySizeLimitMiddleware]  # type: ignore[comparison-overlap]
+def test_middleware_list_is_body_limit_then_rate_limit() -> None:
+    from fast_mcp_template.limits.middleware import RateLimitMiddleware
+
+    mw = build_http_middleware(Settings(), None)
+    # the body limit sits OUTSIDE the rate limit: an oversized body is
+    # refused before it costs a token
+    assert [m.cls for m in mw] == [  # type: ignore[comparison-overlap]
+        BodySizeLimitMiddleware,
+        RateLimitMiddleware,
+    ]
 
 
 def test_wrap_warns_when_trusted_hops_is_above_one(

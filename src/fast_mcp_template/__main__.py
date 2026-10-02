@@ -20,7 +20,7 @@ from fast_mcp_template.server import build_server, health
 
 
 def build_app(settings: Settings) -> ASGIApp:
-    """Return the whole ASGI app: request id around `http_app`.
+    """Return the whole ASGI app: request id and audit, then `http_app`.
 
     `host_origin_protection` and `allowed_hosts` are NOT passed:
     fastmcp then leaves its Host guard off, which is deliberate behind
@@ -34,7 +34,7 @@ def build_app(settings: Settings) -> ASGIApp:
     inner = build_server().http_app(
         path=settings.mcp_path,
         stateless_http=True,
-        middleware=build_http_middleware(settings),
+        middleware=build_http_middleware(settings, redis),
     )
     register_error_handlers(inner)
     return wrap_http_app(inner, settings)

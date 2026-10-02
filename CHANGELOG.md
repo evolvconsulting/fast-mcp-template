@@ -13,3 +13,7 @@ Notable changes to this project. Newest first.
   `main-only-by-pr.yml`, `pr-title.yml`; `check_advisories.py` is now wired.
 - EC-639 step 4: tool safety (`path_segment`, `raise_tool_error`, annotation
   classes) and three per-tool sweeps, each with a control.
+- EC-639 step 5: Redis Lua token bucket and `RateLimitMiddleware`,
+  `AuthAuditMiddleware`, `FailureAlarm`, `ToolCallAuditMiddleware`;
+  `wrap_http_app` now adds the audit layer, `build_http_middleware` the rate
+  limit. Tests gain pytest-asyncio (`asyncio_mode = "auto"`) and fakeredis.

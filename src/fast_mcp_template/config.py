@@ -9,10 +9,28 @@ gate that refuses a field nothing outside this module reads.
 from __future__ import annotations
 
 import ssl
+from typing import Self
 from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import AwareDatetime, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The rate limiter counts authenticated HTTP REQUESTS (`verify_token`
+# runs once per request); people reason in TOOL CALLS, and one tool
+# call costs several requests. MEASURED on fastmcp 4.0.3 (fast-mcp-ado
+# EC-571), in-process: one tool call from a fresh client costs 3
+# authenticated requests on the stateless protocol and 6 on the
+# handshake-era session protocol. The constant is the MAXIMUM of the
+# eras, pinned by `tests/test_rate_limit_multiplier.py`, so a transport
+# or SDK change fails loudly instead of silently eating every budget.
+# A client that hits the mount path with the wrong trailing slash gets
+# a 307 and BOTH requests are authenticated: it burns 2x this figure.
+REQUESTS_PER_TOOL_CALL = 6
+
+# The per-user ceiling in the unit a human reasons about: 60 tool
+# calls per minute is ~1/s sustained, far above any interactive
+# cadence, so it binds a runaway loop rather than normal work.
+DEFAULT_TOOL_CALLS_PER_MINUTE = 60
 
 
 class Settings(BaseSettings):
@@ -51,6 +69,34 @@ class Settings(BaseSettings):
     #: (Redis `rediss://`, a backend `https://`). Public material, held
     #: in memory and used as the SOLE trust root for those connections.
     internal_ca_cert: str | None = None
+
+    # --- Rate limiting and audit (limits/, http/audit.py) -------------
+    #: Names this server in rate-limit keys (`rate:mcp:<key>:tb:...`),
+    #: so several gateways can share one Redis.
+    server_key: str = "template"
+    #: Per-user bucket capacity, in REQUESTS (REQUESTS_PER_TOOL_CALL).
+    #: A per-key `rate_limit` claim overrides it, clamped to 10x.
+    default_rate_limit_per_user: int = Field(
+        default=DEFAULT_TOOL_CALLS_PER_MINUTE * REQUESTS_PER_TOOL_CALL, ge=1
+    )
+    #: Refill window of every bucket, in seconds.
+    rate_limit_window_s: int = Field(default=60, ge=1)
+    #: Shared-credential traffic is bucketed per client IP. Unset, it
+    #: is derived as twice the per-user budget.
+    legacy_rate_limit_per_ip: int = Field(default=1, ge=1)
+    #: Deprecation headers (RFC 9745 / RFC 8594) for a retiring shared
+    #: credential, set per stage. Unset means no headers.
+    legacy_deprecated_at: AwareDatetime | None = None
+    legacy_sunset_at: AwareDatetime | None = None
+    #: Where a caller replaces the retiring credential (the `Link`).
+    manage_mcp_url: str | None = None
+
+    @model_validator(mode="after")
+    def _derive_legacy_rate_limit(self) -> Self:
+        """Default the per-IP shared budget to 2x the per-user one."""
+        if "legacy_rate_limit_per_ip" not in self.model_fields_set:
+            self.legacy_rate_limit_per_ip = 2 * self.default_rate_limit_per_user
+        return self
 
 
 def load_settings() -> Settings:
