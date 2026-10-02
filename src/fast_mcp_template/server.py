@@ -18,8 +18,15 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from fast_mcp_template.config import load_settings
+from fast_mcp_template.http.health import HealthRegistry, register_health_routes
 
 mcp: FastMCP = FastMCP("fast-mcp-template")
+
+#: The readiness checks behind `/health/ready`. Register yours with
+#: `health.add(name, check)` (see `http/health.py`); the routes are
+#: added once, here, so building the app twice never doubles them.
+health: HealthRegistry = HealthRegistry()
+register_health_routes(mcp, health)
 
 
 def greet(name: str) -> str:

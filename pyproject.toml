@@ -14,6 +14,7 @@ authors = [{ name = "evolv Consulting" }]
 # own now and naming it would only be a second pin to forget.
 dependencies = [
   "fastmcp==4.0.3",
+  "httpx2==2.12.0",
   "pydantic-settings==2.15.0",
   "redis==8.1.0",
 ]

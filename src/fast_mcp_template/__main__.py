@@ -14,7 +14,9 @@ from starlette.types import ASGIApp
 from fast_mcp_template.config import Settings, load_settings
 from fast_mcp_template.http import build_http_middleware, wrap_http_app
 from fast_mcp_template.http.errors import register_error_handlers
-from fast_mcp_template.server import build_server
+from fast_mcp_template.http.health import check_redis
+from fast_mcp_template.infra.redis_client import get_redis
+from fast_mcp_template.server import build_server, health
 
 
 def build_app(settings: Settings) -> ASGIApp:
@@ -26,6 +28,9 @@ def build_app(settings: Settings) -> ASGIApp:
     Cross-origin abuse of a bearer-token API is a residual risk to
     record in your own threat model.
     """
+    redis = get_redis(settings)
+    if redis is not None:
+        health.add("redis", lambda: check_redis(redis))
     inner = build_server().http_app(
         path=settings.mcp_path,
         stateless_http=True,
