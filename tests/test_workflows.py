@@ -164,3 +164,122 @@ def test_actions_in_the_security_jobs_are_pinned_by_sha() -> None:
 def test_pip_audit_is_a_pinned_dev_dependency() -> None:
     text = (ROOT / "pyproject.toml").read_text()
     assert re.search(r'"pip-audit==\d+\.\d+\.\d+"', text)
+
+
+# --- build, deploy and the OIDC probe ---------------------------------
+
+SHA_PINNED = re.compile(r"@[0-9a-f]{40}$")
+
+
+def _steps(workflow: str, job: str) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = _load(workflow)["jobs"][job]["steps"]
+    return steps
+
+
+def _index(steps: list[dict[str, Any]], needle: str) -> int:
+    for i, s in enumerate(steps):
+        if needle in (s.get("name", "") + s.get("run", "") + s.get("uses", "")):
+            return i
+    raise AssertionError(f"no step mentions {needle!r}")
+
+
+def test_no_workflow_runs_on_pull_request_target_or_writes_with_the_default_token() -> (
+    None
+):
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        wf = yaml.safe_load(path.read_text())
+        assert "pull_request_target" not in wf[True], path.name
+        top = wf.get("permissions", {})
+        assert (
+            not any(v == "write" for v in top.values())
+            or path.name == "oidc-claims-probe.yml"
+        ), path.name
+
+
+def test_build_pushes_last_after_every_step_that_can_fail() -> None:
+    steps = _steps("build-image.yml", "build")
+    order = [
+        _index(steps, "Build the ARM64 image"),
+        _index(steps, "SBOM (CycloneDX)"),
+        _index(steps, "SBOM (SPDX)"),
+        _index(steps, "Image scan"),
+        _index(steps, "Assume the build role"),
+        _index(steps, "Refuse when the tag already exists"),
+        _index(steps, "Log in to ECR"),
+        _index(steps, "Push and print the digest"),
+    ]
+    assert order == sorted(order), (
+        "ECR tags are immutable: nothing may fail after the push"
+    )
+    assert order[-1] == len(steps) - 1
+
+
+def test_build_never_cancels_and_only_the_build_job_may_mint_a_token() -> None:
+    wf = _load("build-image.yml")
+    assert wf["concurrency"]["cancel-in-progress"] is False
+    assert wf["jobs"]["build"]["permissions"]["id-token"] == "write"  # noqa: S105
+    assert "id-token" not in wf["permissions"]
+    assert "default_branch" in wf["jobs"]["build"]["if"]
+    scan = next(
+        s for s in _steps("build-image.yml", "build") if "trivy" in s.get("uses", "")
+    )
+    assert scan["with"]["exit-code"] == "1" and "CRITICAL" in scan["with"]["severity"]
+
+
+def test_deploy_is_dispatch_only_with_no_environment_and_never_cancels() -> None:
+    wf = _load("deploy.yml")
+    assert list(wf[True]) == ["workflow_dispatch"]
+    assert wf["concurrency"]["cancel-in-progress"] is False
+    assert "environment" not in wf["jobs"]["deploy"]
+    assert "default_branch" in wf["jobs"]["deploy"]["if"]
+
+
+def test_deploy_inputs_reach_the_shell_only_through_env() -> None:
+    for step in _steps("deploy.yml", "deploy"):
+        assert "inputs." not in step.get("run", ""), step.get("name")
+        assert "github.event" not in step.get("run", ""), step.get("name")
+    env = _load("deploy.yml")["jobs"]["deploy"]["env"]
+    assert env["INPUT_STAGE"] == "${{ inputs.stage }}"
+    assert env["INPUT_IMAGE_SHA"] == "${{ inputs.image_sha }}"
+
+
+def test_deploy_checks_and_validates_before_it_assumes_the_role() -> None:
+    steps = _steps("deploy.yml", "deploy")
+    stage_check = _index(steps, "check-stage-files.py")
+    validate = _index(steps, "render-taskdef.py validate")
+    assume = _index(steps, "Assume the deploy role")
+    assert stage_check < assume and validate < assume
+
+
+def test_deploy_registers_a_rendered_digest_pinned_definition_with_a_circuit_breaker() -> (
+    None
+):
+    deploy = next(
+        s for s in _steps("deploy.yml", "deploy") if s.get("name") == "Deploy the stage"
+    )["run"]
+    assert "render-taskdef.py render --digest" in deploy
+    assert "check-stage-files.py --rendered" in deploy
+    assert "deploymentCircuitBreaker={enable=true,rollback=true}" in deploy
+    assert deploy.index("rollback target") < deploy.index("register-task-definition")
+    assert "wait services-stable" in deploy
+
+
+def test_third_party_actions_in_build_and_deploy_are_pinned_by_sha() -> None:
+    for name, job in (("build-image.yml", "build"), ("deploy.yml", "deploy")):
+        for step in _steps(name, job):
+            if "uses" in step:
+                assert SHA_PINNED.search(step["uses"]), (name, step["uses"])
+
+
+def test_the_probe_binds_itself_and_demands_access_denied_from_both_roles() -> None:
+    wf = _load("oidc-claims-probe.yml")
+    assert list(wf[True]) == ["workflow_dispatch"]
+    steps = wf["jobs"]["probe"]["steps"]
+    assert all("uses" not in s for s in steps), "no third-party action in the probe"
+    run = steps[0]["run"]
+    assert "::add-mask::" in run
+    assert "endswith($want)" in run  # the binding proof
+    assert "(AccessDenied)" in run and "SUCCEEDED" in run  # the negative proof
+    assert "for role in BUILD DEPLOY" in run
+    # the token is never printed
+    assert 'echo "${token}"' not in run and "echo $token" not in run

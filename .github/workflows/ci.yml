@@ -367,6 +367,56 @@ jobs:
           cd - >/dev/null
           uv run --frozen pip-audit --no-deps --disable-pip -r "${scratch}/w/requirements-upgraded.txt"
 
+  image:
+    # CI builds the image, so a stale lock or a broken Dockerfile fails here. Native amd64 on
+    # purpose (fast); the ARM64 build by QEMU emulation runs in build-image.yml on the default
+    # branch.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Build the image
+        run: docker build -t gateway:ci .
+
+      # Same action, pin and flags as build-image.yml, so a PR proves what main will enforce.
+      - name: Image scan (HIGH and CRITICAL fail the build)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: gateway:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Runs non-root
+        run: |
+          set -euo pipefail
+          test "$(docker run --rm --entrypoint id gateway:ci -u)" = "10001"
+
+      - name: Refuses to boot unauthenticated, then serves /health once configured
+        run: |
+          set -euo pipefail
+          # No credential at all: the container must exit non-zero, not serve.
+          if docker run --rm gateway:ci >/dev/null 2>&1; then
+            echo "::error::the image booted with no credential configured"
+            exit 1
+          fi
+          # A fresh random key per run: the boot floor refuses a placeholder, and none is committed.
+          MCP_TEMPLATE_API_KEY="$(openssl rand -base64 48)"
+          export MCP_TEMPLATE_API_KEY
+          docker run -d --name gateway-ci -e MCP_TEMPLATE_API_KEY \
+            -e MCP_TEMPLATE_REDIS_URL=redis://127.0.0.1:1/0 -p 127.0.0.1:8000:8000 gateway:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health | grep -q '"status":"ok"'; then
+              docker rm -f gateway-ci >/dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs gateway-ci || true
+          docker rm -f gateway-ci >/dev/null
+          echo "::error::the container never answered /health"
+          exit 1
+
   # ---------------------------------------------------------------------
   # ASSURANCE - weekly, on demand, or when a push touches code.
   # ---------------------------------------------------------------------

@@ -1,0 +1,121 @@
+name: deploy
+
+# The ONLY way a stage or a rollback reaches AWS. Manual dispatch only: a person starts every
+# run, and the deploy role's trust pins that person's `actor_id` (see infra/iam). Nothing here
+# can change load balancer weights: that stays a separate, deliberate step.
+#
+# ADOPTERS: set the repository variables AWS_REGION, AWS_DEPLOY_ROLE_ARN, AWS_ECS_CLUSTER and
+# AWS_ECS_SERVICE, and edit deploy/gateway.json. Probe the OIDC wiring FIRST with the
+# `oidc claims probe` workflow.
+#
+# The logic that can be unit-tested lives in scripts/render-taskdef.py and
+# scripts/check-stage-files.py (tests/test_render_taskdef.py, tests/test_check_stage_files.py).
+# This file orders the phases:
+#   1. before any role is assumed: the stage files are clean, the inputs are valid;
+#   2. the OIDC assume of the deploy role;
+#   3. deploy (resolve the image digest, render, register, update with the circuit breaker and
+#      automatic rollback, wait) or rollback (update to an earlier revision, wait).
+#
+# NO `environment:` anywhere (GitHub Free has none on private repositories). Dispatch inputs
+# reach shell and Python ONLY through `env:` (never `${{ inputs.* }}` inside a run block).
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: A stage file name from deploy/stages (for example 0-legacy). Ignored by a rollback.
+        required: false
+        type: string
+        default: ''
+      image_sha:
+        description: Full 40-hex commit SHA on the default branch whose build-image run succeeded. Empty for a rollback.
+        required: false
+        type: string
+        default: ''
+      rollback_to_revision:
+        description: Optional task definition revision number to roll back to. Runs ONLY the rollback path.
+        required: false
+        type: string
+        default: ''
+
+# A deploy must never be cancelled half way: an interrupted update-service leaves a half-rolled
+# deployment.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      id-token: write   # assumes the deploy role
+      contents: read
+    env:
+      INPUT_STAGE: ${{ inputs.stage }}
+      INPUT_IMAGE_SHA: ${{ inputs.image_sha }}
+      INPUT_ROLLBACK_TO_REVISION: ${{ inputs.rollback_to_revision }}
+      CLUSTER: ${{ vars.AWS_ECS_CLUSTER }}
+      SERVICE: ${{ vars.AWS_ECS_SERVICE }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Print the workflow commit
+        run: echo "workflow commit (github.sha) ${GITHUB_SHA}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Stage files are clean (TEST_*, the disabled-auth escape hatch, ...)
+        run: python3 scripts/check-stage-files.py
+
+      - name: Validate the inputs
+        run: python3 scripts/render-taskdef.py validate
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+
+      - name: Roll back to an earlier revision
+        if: inputs.rollback_to_revision != ''
+        run: |
+          set -euo pipefail
+          family="$(aws ecs describe-services --cluster "${CLUSTER}" --services "${SERVICE}" \
+            --query 'services[0].taskDefinition' --output text | sed -E 's#.*/([^:]+):[0-9]+$#\1#')"
+          aws ecs update-service --cluster "${CLUSTER}" --service "${SERVICE}" \
+            --task-definition "${family}:${INPUT_ROLLBACK_TO_REVISION}" >/dev/null
+          aws ecs wait services-stable --cluster "${CLUSTER}" --services "${SERVICE}"
+          echo "rolled back to ${family}:${INPUT_ROLLBACK_TO_REVISION}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Deploy the stage
+        if: inputs.rollback_to_revision == ''
+        run: |
+          set -euo pipefail
+          repository="$(python3 -c "import json;print(json.load(open('deploy/gateway.json'))['ecr_repository'])")"
+          # The tag is immutable and was pushed by build-image for this exact commit: the
+          # digest, not the tag, is what the task definition pins.
+          digest="$(aws ecr describe-images --repository-name "${repository}" \
+            --image-ids "imageTag=sha-${INPUT_IMAGE_SHA}" \
+            --query 'imageDetails[0].imageDigest' --output text)"
+          python3 scripts/render-taskdef.py render --digest "${digest}" --out rendered.json
+          python3 scripts/check-stage-files.py --rendered rendered.json
+          # The revision BEFORE this deploy is the rollback target: print it first.
+          before="$(aws ecs describe-services --cluster "${CLUSTER}" --services "${SERVICE}" \
+            --query 'services[0].taskDefinition' --output text)"
+          echo "rollback target (the live revision before this deploy): ${before}" | tee -a "${GITHUB_STEP_SUMMARY}"
+          new="$(aws ecs register-task-definition --cli-input-json file://rendered.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)"
+          aws ecs update-service --cluster "${CLUSTER}" --service "${SERVICE}" \
+            --task-definition "${new}" \
+            --deployment-configuration 'deploymentCircuitBreaker={enable=true,rollback=true}' >/dev/null
+          aws ecs wait services-stable --cluster "${CLUSTER}" --services "${SERVICE}"
+          echo "deployed ${new} (image ${digest})" | tee -a "${GITHUB_STEP_SUMMARY}"

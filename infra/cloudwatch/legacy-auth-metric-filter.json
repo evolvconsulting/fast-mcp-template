@@ -1,0 +1,13 @@
+{
+  "logGroupName": "/ecs/fast-mcp-template",
+  "filterName": "LegacyAuthRequests",
+  "filterPattern": "{ $.event = \"mcp_auth\" && $.auth_path = \"legacy\" }",
+  "metricTransformations": [
+    {
+      "metricName": "LegacyAuthRequests",
+      "metricNamespace": "MCP",
+      "metricValue": "1",
+      "unit": "Count"
+    }
+  ]
+}

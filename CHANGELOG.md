@@ -25,3 +25,6 @@ Notable changes to this project. Newest first.
 - EC-639: `ConcurrencyLimitMiddleware` and `RequestBodyGuard`, wired in `build_app`.
 - EC-639 step 7a: production stage files, base task definition, and
   `scripts/check-stage-files.py` (a Gate step) driven by `deploy/gateway.json`.
+- EC-639 step 7b: Dockerfile and the `image` CI job, `build-image.yml`, `deploy.yml`,
+  `oidc-claims-probe.yml`, `scripts/render-taskdef.py`, `infra/` (workflow-bound OIDC trusts,
+  least-privilege policies, ECR, CloudWatch census) and a rollback runbook.

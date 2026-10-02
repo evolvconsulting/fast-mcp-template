@@ -1,0 +1,145 @@
+name: build image
+
+# Builds the ARM64 gateway image and pushes `<repo>:sha-<full git SHA>`. Build is SEPARATE from
+# deploy, so no build ever runs inside a change window.
+#
+# ADOPTERS: set the repository variables AWS_BUILD_ROLE_ARN and AWS_REGION, and replace
+# ECR_REPOSITORY below with your repository name (it must match deploy/gateway.json
+# `ecr_repository` and infra/ecr/repository.json).
+#
+# ORDER IS LOAD-BEARING. ECR tags are IMMUTABLE, so a run that fails AFTER pushing
+# `sha-<sha>` cannot be re-run (the tag exists): it is fixed by a NEW commit. Every step that can
+# fail (build, SBOM, scan, tag check) therefore runs BEFORE the push; nothing after the push can
+# fail for a reason the commit controls.
+#
+# ARM64 is built by QEMU emulation on a standard runner (native ARM runners may bill at a premium
+# on private repositories). Record the first run's duration; over 30 minutes, or a wheel that
+# will not install (one compiling from source), is a STOP.
+#
+# cancel-in-progress is false here and this is a recorded deviation from the "every workflow
+# cancels superseded runs" rule: cancelling a push-to-main build part-way can leave a
+# `sha-<sha>` tag with a cancelled run, and that commit could then never be deployed.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The OIDC role trusts the default branch only; a run elsewhere could not assume it.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      id-token: write   # this job assumes the build role
+      contents: read
+    env:
+      ECR_REPOSITORY: fast-mcp-template
+      IMAGE_TAG: sha-${{ github.sha }}
+      LOCAL_IMAGE: gateway:build
+    steps:
+      - name: Record the start time
+        run: echo "BUILD_STARTED=$(date -u +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build the ARM64 image (loaded locally, not pushed)
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/arm64 --provenance=false --load \
+            -t "${LOCAL_IMAGE}" .
+
+      - name: SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.LOCAL_IMAGE }}
+          format: cyclonedx-json
+          artifact-name: sbom-${{ github.sha }}.cdx.json
+          output-file: sbom-${{ github.sha }}.cdx.json
+          upload-artifact-retention: 90
+
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.LOCAL_IMAGE }}
+          format: spdx-json
+          artifact-name: sbom-${{ github.sha }}.spdx.json
+          output-file: sbom-${{ github.sha }}.spdx.json
+          upload-artifact-retention: 90
+
+      - name: Image scan (HIGH and CRITICAL fail the build)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Assume the build role
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-build-${{ github.run_id }}
+
+      - name: Refuse when the tag already exists (immutable tags)
+        run: |
+          set -uo pipefail
+          # `describe-images` exits non-zero for a missing tag. That is the wanted answer
+          # here, so errexit is off for this one call and the status is read explicitly.
+          set +e
+          err="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" \
+            --image-ids "imageTag=${IMAGE_TAG}" 2>&1 >/dev/null)"
+          rc=$?
+          if [ "${rc}" -eq 0 ]; then
+            echo "::error::${IMAGE_TAG} already exists; tags are immutable. Fix with a NEW commit."
+            exit 1
+          fi
+          if ! grep -q ImageNotFoundException <<<"${err}"; then
+            echo "::error::describe-images failed for another reason: ${err}"
+            exit 1
+          fi
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+
+      - name: Push and print the digest
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          target="${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker tag "${LOCAL_IMAGE}" "${target}"
+          out="$(docker push "${target}")"
+          echo "${out}"
+          pushed="$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' <<<"${out}" | tail -n 1)"
+          resolved="$(aws ecr describe-images --repository-name "${ECR_REPOSITORY}" \
+            --image-ids "imageTag=${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text)"
+          # The tag now exists and is immutable, so this commit can never be rebuilt: a
+          # mismatch is a warning, never a failure. The registry digest is the truth.
+          if ! grep -Eq '^sha256:[0-9a-f]{64}$' <<<"${resolved}"; then
+            echo "::error::the registry returned no digest for ${IMAGE_TAG}: '${resolved}'"
+            exit 1
+          fi
+          if [ "${pushed}" != "${resolved}" ]; then
+            echo "::warning::pushed digest '${pushed}' differs from the registry digest '${resolved}'; the registry digest is used"
+          fi
+          {
+            echo "image: ${ECR_REPOSITORY}:${IMAGE_TAG}"
+            echo "digest: ${resolved}"
+            echo "build seconds: $(( $(date -u +%s) - BUILD_STARTED ))"
+          } | tee -a "${GITHUB_STEP_SUMMARY}"
