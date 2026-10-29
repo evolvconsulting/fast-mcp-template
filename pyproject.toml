@@ -13,7 +13,7 @@ authors = [{ name = "evolv Consulting" }]
 # 4.0 line went GA on 2026-08-31, so the core package resolves on its
 # own now and naming it would only be a second pin to forget.
 dependencies = [
-  "fastmcp==4.0.3",
+  "fastmcp==4.1.2",
   "httpx2==2.12.0",
   "pydantic-settings==2.15.0",
   "redis==8.1.0",
